@@ -5,6 +5,7 @@ use bevy::{
     prelude::*,
 };
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use bevy_rapier2d::prelude::*;
 
 mod menu;
 use menu::*;
@@ -12,7 +13,7 @@ use menu::*;
 mod game;
 use game::*;
 
-const DEV_MODE: bool = false;
+const DEV_MODE: bool = true;
 
 const MAIN_FONT: &str = "fonts/Quicksand-Medium.ttf";
 
@@ -36,6 +37,7 @@ pub enum GameState {
 fn main() {
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::BLACK))
+        .insert_resource(Msaa::Sample4)
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Side Effects".into(),
@@ -48,6 +50,11 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugin(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
+        .insert_resource(RapierConfiguration {
+            gravity: Vec2::ZERO,
+            ..default()
+        })
         .add_state::<GameState>()
         .add_startup_system(setup)
         .add_plugin(MenuPlugin)
@@ -62,7 +69,8 @@ fn main() {
             .add_plugin(FrameTimeDiagnosticsPlugin::default())
             .add_plugin(
                 WorldInspectorPlugin::new().run_if(input_toggle_active(false, KeyCode::Equals)),
-            );
+            )
+            .add_plugin(RapierDebugRenderPlugin::default());
     }
 
     app.run();

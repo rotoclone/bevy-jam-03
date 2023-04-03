@@ -16,7 +16,7 @@ const MOVE_DOWN_KEY: KeyCode = KeyCode::S;
 const ROTATE_CLOCKWISE_KEY: KeyCode = KeyCode::Right;
 const ROTATE_COUNTERCLOCKWISE_KEY: KeyCode = KeyCode::Left;
 
-const MOVE_SPEED: f32 = 500.0;
+const MOVE_SPEED: f32 = 750.0;
 const ROTATE_SPEED: f32 = 0.5;
 
 const HIT_SOUND_VOLUME: f32 = 0.5;
@@ -327,6 +327,7 @@ fn game_setup(
             ..default()
         })
         .insert(Collider::ball(100.0))
+        .insert(Sensor)
         .insert(Transform::from_translation(Vec3::new(
             -PLAY_AREA_RADIUS,
             PLAY_AREA_RADIUS,
@@ -344,6 +345,7 @@ fn game_setup(
             ..default()
         })
         .insert(Collider::ball(100.0))
+        .insert(Sensor)
         .insert(Transform::from_translation(Vec3::new(
             PLAY_AREA_RADIUS,
             PLAY_AREA_RADIUS,
@@ -361,6 +363,7 @@ fn game_setup(
             ..default()
         })
         .insert(Collider::ball(100.0))
+        .insert(Sensor)
         .insert(Transform::from_translation(Vec3::new(
             PLAY_AREA_RADIUS,
             -PLAY_AREA_RADIUS,
@@ -544,6 +547,11 @@ fn spawn_ball<'w, 's, 'a>(
     let mut ball = commands.spawn(RigidBody::Dynamic);
 
     ball.insert(Collider::ball(BALL_SIZE))
+        // make balls go through each other
+        .insert(CollisionGroups::new(
+            Group::GROUP_1,
+            Group::all().difference(Group::GROUP_1),
+        ))
         .insert(MaterialMesh2dBundle {
             mesh: meshes.add(shape::Circle::new(BALL_SIZE).into()).into(),
             material: materials.add(ColorMaterial::from(ball_component.ball_type.color())),

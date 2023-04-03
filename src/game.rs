@@ -1,7 +1,10 @@
+use std::time::{Duration, Instant};
+
 use bevy::{ecs::system::EntityCommands, sprite::MaterialMesh2dBundle};
 use bevy_asset_loader::prelude::*;
 use bevy_rapier2d::prelude::*;
 use iyes_progress::{ProgressCounter, ProgressPlugin};
+use rand::{distributions::Standard, prelude::Distribution, Rng};
 
 use crate::*;
 
@@ -13,10 +16,32 @@ const MOVE_DOWN_KEY: KeyCode = KeyCode::S;
 const ROTATE_CLOCKWISE_KEY: KeyCode = KeyCode::Right;
 const ROTATE_COUNTERCLOCKWISE_KEY: KeyCode = KeyCode::Left;
 
-const MOVE_SPEED: f32 = 450.0;
+const MOVE_SPEED: f32 = 500.0;
 const ROTATE_SPEED: f32 = 0.5;
 
 const HIT_SOUND_VOLUME: f32 = 0.5;
+const SPAWN_SOUND_VOLUME: f32 = 0.5;
+const GOOD_SCORE_VOLUME: f32 = 0.8;
+const BAD_SCORE_VOLUME: f32 = 0.5;
+
+const WALL_COLOR: Color = Color::Rgba {
+    red: 0.2,
+    green: 0.2,
+    blue: 0.2,
+    alpha: 1.0,
+};
+
+const PLAY_AREA_RADIUS: f32 = WINDOW_HEIGHT / 2.0;
+
+const BALL_SIZE: f32 = 15.0;
+const BALL_MIN_START_X: f32 = -25.0;
+const BALL_MAX_START_X: f32 = 25.0;
+const BALL_MIN_START_IMPULSE_Y: f32 = -20.0;
+const BALL_MAX_START_IMPULSE_Y: f32 = -5.0;
+const BALL_MIN_START_IMPULSE_X: f32 = -10.0;
+const BALL_MAX_START_IMPULSE_X: f32 = 10.0;
+
+const TIME_BETWEEN_BALL_SPAWNS: Duration = Duration::from_secs(3);
 
 pub struct GamePlugin;
 
@@ -39,8 +64,15 @@ impl Plugin for GamePlugin {
                 despawn_components_system::<GameComponent>.in_schedule(OnExit(GameState::Game)),
             );
 
-        app.add_system(move_player.run_if(in_state(GameState::Game)))
-            .add_system(collision_sounds.run_if(in_state(GameState::Game)));
+        app.insert_resource(Score(0))
+            .add_system(spawn_balls.run_if(in_state(GameState::Game)))
+            .add_system(player_movement.run_if(in_state(GameState::Game)))
+            .add_system(collisions.run_if(in_state(GameState::Game)))
+            .add_system(
+                update_score_display
+                    .after(collisions)
+                    .run_if(in_state(GameState::Game)),
+            );
     }
 }
 
@@ -60,6 +92,12 @@ struct AudioAssets {
     up: Handle<AudioSource>,
     #[asset(path = "sounds/down.ogg")]
     down: Handle<AudioSource>,
+    #[asset(path = "sounds/launch.ogg")]
+    launch: Handle<AudioSource>,
+    #[asset(path = "sounds/good_2.ogg")]
+    good: Handle<AudioSource>,
+    #[asset(path = "sounds/bad.ogg")]
+    bad: Handle<AudioSource>,
 }
 
 #[derive(Component)]
@@ -85,7 +123,48 @@ enum SideType {
 }
 
 #[derive(Component)]
-struct Ball;
+struct Ball {
+    ball_type: BallType,
+    points: u16,
+}
+
+#[derive(PartialEq)]
+enum BallType {
+    A,
+    B,
+    C,
+}
+
+impl Distribution<BallType> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> BallType {
+        match rng.gen_range(0..=2) {
+            0 => BallType::A,
+            1 => BallType::B,
+            2 => BallType::C,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl BallType {
+    /// Gets the color that corresponds to this ball type
+    fn color(&self) -> Color {
+        match self {
+            BallType::A => Color::ORANGE_RED,
+            BallType::B => Color::LIME_GREEN,
+            BallType::C => Color::YELLOW,
+        }
+    }
+}
+
+#[derive(Component)]
+struct ScoreArea(BallType);
+
+#[derive(Resource)]
+struct Score(i32);
+
+#[derive(Component)]
+struct ScoreText;
 
 /// Sets up the loading screen.
 fn loading_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -131,8 +210,8 @@ fn game_setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     image_assets: Res<ImageAssets>,
+    asset_server: Res<AssetServer>,
 ) {
-    let play_area_radius: f32 = WINDOW_HEIGHT / 2.0;
     let player_shape_radius: f32 = 50.0;
     let side_sprite_custom_size = Vec2::new((player_shape_radius.powi(2) * 2.0).sqrt(), 6.0);
     let side_collider = Collider::segment(
@@ -238,90 +317,144 @@ fn game_setup(
                 });
         });
 
+    // score areas
+    let mut score_area_a_color = BallType::A.color();
+    score_area_a_color.set_a(0.1);
+    commands
+        .spawn(MaterialMesh2dBundle {
+            mesh: meshes.add(shape::Circle::new(100.0).into()).into(),
+            material: materials.add(ColorMaterial::from(score_area_a_color)),
+            ..default()
+        })
+        .insert(Collider::ball(100.0))
+        .insert(Transform::from_translation(Vec3::new(
+            -PLAY_AREA_RADIUS,
+            PLAY_AREA_RADIUS,
+            0.0,
+        )))
+        .insert(GameComponent)
+        .insert(ScoreArea(BallType::A));
+
+    let mut score_area_b_color = BallType::B.color();
+    score_area_b_color.set_a(0.1);
+    commands
+        .spawn(MaterialMesh2dBundle {
+            mesh: meshes.add(shape::Circle::new(100.0).into()).into(),
+            material: materials.add(ColorMaterial::from(score_area_b_color)),
+            ..default()
+        })
+        .insert(Collider::ball(100.0))
+        .insert(Transform::from_translation(Vec3::new(
+            PLAY_AREA_RADIUS,
+            PLAY_AREA_RADIUS,
+            0.0,
+        )))
+        .insert(GameComponent)
+        .insert(ScoreArea(BallType::B));
+
+    let mut score_area_c_color = BallType::C.color();
+    score_area_c_color.set_a(0.1);
+    commands
+        .spawn(MaterialMesh2dBundle {
+            mesh: meshes.add(shape::Circle::new(100.0).into()).into(),
+            material: materials.add(ColorMaterial::from(score_area_c_color)),
+            ..default()
+        })
+        .insert(Collider::ball(100.0))
+        .insert(Transform::from_translation(Vec3::new(
+            PLAY_AREA_RADIUS,
+            -PLAY_AREA_RADIUS,
+            0.0,
+        )))
+        .insert(GameComponent)
+        .insert(ScoreArea(BallType::C));
+
     // left wall
     commands
         .spawn(SpriteBundle {
-            transform: Transform::from_translation(Vec3::new(-play_area_radius * 2.0, 0.0, 0.0)),
+            transform: Transform::from_translation(Vec3::new(-PLAY_AREA_RADIUS * 2.0, 0.0, 0.0)),
             sprite: Sprite {
-                color: Color::DARK_GRAY,
-                custom_size: Some(Vec2::new(play_area_radius * 2.0, play_area_radius * 2.0)),
+                color: WALL_COLOR,
+                custom_size: Some(Vec2::new(PLAY_AREA_RADIUS * 2.0, PLAY_AREA_RADIUS * 2.0)),
                 ..default()
             },
             ..default()
         })
-        .insert(Collider::cuboid(play_area_radius, play_area_radius))
+        .insert(Collider::cuboid(PLAY_AREA_RADIUS, PLAY_AREA_RADIUS))
         .insert(Restitution::coefficient(1.0))
         .insert(GameComponent);
 
     // top wall
     commands
         .spawn(SpriteBundle {
-            transform: Transform::from_translation(Vec3::new(0.0, play_area_radius * 2.0, 0.0)),
+            transform: Transform::from_translation(Vec3::new(0.0, PLAY_AREA_RADIUS * 2.0, 0.0)),
             sprite: Sprite {
-                color: Color::DARK_GRAY,
-                custom_size: Some(Vec2::new(play_area_radius * 2.0, play_area_radius * 2.0)),
+                color: WALL_COLOR,
+                custom_size: Some(Vec2::new(PLAY_AREA_RADIUS * 2.0, PLAY_AREA_RADIUS * 2.0)),
                 ..default()
             },
             ..default()
         })
-        .insert(Collider::cuboid(play_area_radius, play_area_radius))
+        .insert(Collider::cuboid(PLAY_AREA_RADIUS, PLAY_AREA_RADIUS))
         .insert(Restitution::coefficient(1.0))
         .insert(GameComponent);
 
     // right wall
     commands
         .spawn(SpriteBundle {
-            transform: Transform::from_translation(Vec3::new(play_area_radius * 2.0, 0.0, 0.0)),
+            transform: Transform::from_translation(Vec3::new(PLAY_AREA_RADIUS * 2.0, 0.0, 0.0)),
             sprite: Sprite {
-                color: Color::DARK_GRAY,
-                custom_size: Some(Vec2::new(play_area_radius * 2.0, play_area_radius * 2.0)),
+                color: WALL_COLOR,
+                custom_size: Some(Vec2::new(PLAY_AREA_RADIUS * 2.0, PLAY_AREA_RADIUS * 2.0)),
                 ..default()
             },
             ..default()
         })
-        .insert(Collider::cuboid(play_area_radius, play_area_radius))
+        .insert(Collider::cuboid(PLAY_AREA_RADIUS, PLAY_AREA_RADIUS))
         .insert(Restitution::coefficient(1.0))
         .insert(GameComponent);
 
     // bottom wall
     commands
         .spawn(SpriteBundle {
-            transform: Transform::from_translation(Vec3::new(0.0, -play_area_radius * 2.0, 0.0)),
+            transform: Transform::from_translation(Vec3::new(0.0, -PLAY_AREA_RADIUS * 2.0, 0.0)),
             sprite: Sprite {
-                color: Color::DARK_GRAY,
-                custom_size: Some(Vec2::new(play_area_radius * 2.0, play_area_radius * 2.0)),
+                color: WALL_COLOR,
+                custom_size: Some(Vec2::new(PLAY_AREA_RADIUS * 2.0, PLAY_AREA_RADIUS * 2.0)),
                 ..default()
             },
             ..default()
         })
-        .insert(Collider::cuboid(play_area_radius, play_area_radius))
+        .insert(Collider::cuboid(PLAY_AREA_RADIUS, PLAY_AREA_RADIUS))
         .insert(Restitution::coefficient(1.0))
         .insert(GameComponent);
 
-    // ball
+    // score display
     commands
-        .spawn(RigidBody::Dynamic)
-        .insert(Collider::ball(15.0))
-        .insert(MaterialMesh2dBundle {
-            mesh: meshes.add(shape::Circle::new(15.0).into()).into(),
-            material: materials.add(ColorMaterial::from(Color::TURQUOISE)),
-            transform: Transform::from_translation(Vec3::new(0., 0., 0.)),
-            ..default()
-        })
-        .insert(Restitution {
-            coefficient: 1.0,
-            combine_rule: CoefficientCombineRule::Multiply,
-        })
-        .insert(TransformBundle::from(Transform::from_xyz(0.0, 300.0, 0.0)))
-        .insert(ExternalImpulse {
-            impulse: Vec2::new(0.0, -10.0),
-            ..default()
-        })
-        .insert(ActiveEvents::COLLISION_EVENTS)
+        .spawn(
+            TextBundle::from_section(
+                "Score: 0",
+                TextStyle {
+                    font: asset_server.load(MAIN_FONT),
+                    font_size: 30.0,
+                    color: Color::WHITE,
+                },
+            )
+            .with_text_alignment(TextAlignment::Center)
+            .with_style(Style {
+                margin: UiRect {
+                    left: Val::Px(10.0),
+                    top: Val::Px(10.0),
+                    ..default()
+                },
+                ..default()
+            }),
+        )
         .insert(GameComponent)
-        .insert(Ball);
+        .insert(ScoreText);
 }
 
+/// Spawns a side for the player shape
 fn spawn_side<'w, 's, 'a>(
     parent: &'a mut ChildBuilder<'w, 's, '_>,
     side_type: SideType,
@@ -335,13 +468,13 @@ fn spawn_side<'w, 's, 'a>(
                 texture: image_assets.bouncy_side.clone(),
                 ..default()
             })
-            .insert(Restitution::coefficient(1.5)),
+            .insert(Restitution::coefficient(1.25)),
         SideType::SlowDown => side
             .insert(SpriteBundle {
                 texture: image_assets.non_bouncy_side.clone(),
                 ..default()
             })
-            .insert(Restitution::coefficient(0.1)),
+            .insert(Restitution::coefficient(0.25)),
         SideType::Regular => side.insert(Restitution::coefficient(1.0)),
     };
 
@@ -350,7 +483,85 @@ fn spawn_side<'w, 's, 'a>(
     side
 }
 
-fn move_player(
+struct SpawnTime(Instant);
+
+impl Default for SpawnTime {
+    fn default() -> Self {
+        Self(Instant::now())
+    }
+}
+
+/// Spawns balls
+fn spawn_balls(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut last_spawn_time: Local<SpawnTime>,
+    audio_assets: Res<AudioAssets>,
+    audio: Res<Audio>,
+) {
+    if Instant::now().duration_since(last_spawn_time.0) >= TIME_BETWEEN_BALL_SPAWNS {
+        let mut rng = rand::thread_rng();
+        let ball_type = rng.gen::<BallType>();
+        let spawn_point_x = rng.gen_range(BALL_MIN_START_X..=BALL_MAX_START_X);
+        let impulse_x = rng.gen_range(BALL_MIN_START_IMPULSE_X..=BALL_MAX_START_IMPULSE_X);
+        let impulse_y = rng.gen_range(BALL_MIN_START_IMPULSE_Y..=BALL_MAX_START_IMPULSE_Y);
+        spawn_ball(
+            &mut commands,
+            Ball {
+                ball_type,
+                points: 1,
+            },
+            &mut meshes,
+            &mut materials,
+        )
+        .insert(TransformBundle::from(Transform::from_xyz(
+            spawn_point_x,
+            PLAY_AREA_RADIUS - BALL_SIZE - 1.0,
+            0.0,
+        )))
+        .insert(ExternalImpulse {
+            impulse: Vec2::new(impulse_x, impulse_y),
+            ..default()
+        });
+
+        audio.play_with_settings(
+            audio_assets.launch.clone(),
+            PlaybackSettings::ONCE.with_volume(SPAWN_SOUND_VOLUME),
+        );
+
+        last_spawn_time.0 = Instant::now();
+    }
+}
+
+/// Spawns a ball
+fn spawn_ball<'w, 's, 'a>(
+    commands: &'a mut Commands<'w, 's>,
+    ball_component: Ball,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<ColorMaterial>>,
+) -> EntityCommands<'w, 's, 'a> {
+    let mut ball = commands.spawn(RigidBody::Dynamic);
+
+    ball.insert(Collider::ball(BALL_SIZE))
+        .insert(MaterialMesh2dBundle {
+            mesh: meshes.add(shape::Circle::new(BALL_SIZE).into()).into(),
+            material: materials.add(ColorMaterial::from(ball_component.ball_type.color())),
+            ..default()
+        })
+        .insert(Restitution {
+            coefficient: 1.0,
+            combine_rule: CoefficientCombineRule::Multiply,
+        })
+        .insert(ActiveEvents::COLLISION_EVENTS)
+        .insert(GameComponent)
+        .insert(ball_component);
+
+    ball
+}
+
+/// Applies impulses to the player based on pressed keys
+fn player_movement(
     mut player_shape_query: Query<&mut ExternalImpulse, With<PlayerShape>>,
     keycode: Res<Input<KeyCode>>,
 ) {
@@ -383,38 +594,76 @@ fn move_player(
     }
 }
 
-fn collision_sounds(
+/// Handles collisions between objects
+fn collisions(
+    mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
+    score: Res<Score>,
     audio: Res<Audio>,
     audio_assets: Res<AudioAssets>,
     world: &World,
 ) {
+    let mut new_score = score.0;
     for event in collision_events.iter() {
         if let CollisionEvent::Started(a, b, _) = event {
-            if one_has_component::<Ball>(*a, *b, world) {
-                audio.play_with_settings(
-                    audio_assets.hit.clone(),
-                    PlaybackSettings::ONCE.with_volume(HIT_SOUND_VOLUME),
-                );
+            if let Some((ball, ball_entity)) = get_component_from_either::<Ball>(*a, *b, world) {
+                if let Some((score_area, _)) = get_component_from_either::<ScoreArea>(*a, *b, world)
+                {
+                    // a ball has hit a score area
+                    if ball.ball_type == score_area.0 {
+                        new_score += i32::from(ball.points);
+                        audio.play_with_settings(
+                            audio_assets.good.clone(),
+                            PlaybackSettings::ONCE.with_volume(GOOD_SCORE_VOLUME),
+                        );
+                    } else {
+                        new_score -= i32::from(ball.points);
+                        audio.play_with_settings(
+                            audio_assets.bad.clone(),
+                            PlaybackSettings::ONCE.with_volume(BAD_SCORE_VOLUME),
+                        );
+                    }
+                    commands.entity(ball_entity).despawn_recursive();
+                } else {
+                    // a ball has hit something that's not a score area
+                    audio.play_with_settings(
+                        audio_assets.hit.clone(),
+                        PlaybackSettings::ONCE.with_volume(HIT_SOUND_VOLUME),
+                    );
 
-                if one_has_matching_component(&SideType::SpeedUp, *a, *b, world) {
-                    audio.play(audio_assets.up.clone());
-                }
+                    if one_has_matching_component(&SideType::SpeedUp, *a, *b, world) {
+                        audio.play(audio_assets.up.clone());
+                    }
 
-                if one_has_matching_component(&SideType::SlowDown, *a, *b, world) {
-                    audio.play(audio_assets.down.clone());
+                    if one_has_matching_component(&SideType::SlowDown, *a, *b, world) {
+                        audio.play(audio_assets.down.clone());
+                    }
                 }
             }
         }
     }
+
+    commands.insert_resource(Score(new_score));
 }
 
-// Determines if either of the provided entities have a certain type of component
-fn one_has_component<T: Component>(a: Entity, b: Entity, world: &World) -> bool {
-    world.get::<T>(a).is_some() || world.get::<T>(b).is_some()
+/// Gets a certain type of component from one of the provided entities
+fn get_component_from_either<T: Component>(
+    a: Entity,
+    b: Entity,
+    world: &World,
+) -> Option<(&T, Entity)> {
+    if let Some(component) = world.get::<T>(a) {
+        return Some((component, a));
+    }
+
+    if let Some(component) = world.get::<T>(b) {
+        return Some((component, b));
+    }
+
+    None
 }
 
-// Determines if either of the provided entities has a component with a specific value
+/// Determines if either of the provided entities has a component with a specific value
 fn one_has_matching_component<T: Component + PartialEq>(
     component: &T,
     a: Entity,
@@ -423,4 +672,14 @@ fn one_has_matching_component<T: Component + PartialEq>(
 ) -> bool {
     world.get::<T>(a).map(|c| c == component).unwrap_or(false)
         || world.get::<T>(b).map(|c| c == component).unwrap_or(false)
+}
+
+/// Keeps the score display up to date
+fn update_score_display(
+    score: Res<Score>,
+    mut score_text_query: Query<&mut Text, With<ScoreText>>,
+) {
+    for mut score_text in score_text_query.iter_mut() {
+        score_text.sections[0].value = format!("Score: {}", score.0);
+    }
 }

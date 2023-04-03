@@ -82,6 +82,8 @@ struct ImageAssets {
     bouncy_side: Handle<Image>,
     #[asset(path = "images/non_bouncy_side.png")]
     non_bouncy_side: Handle<Image>,
+    #[asset(path = "images/directional_side.png")]
+    directional_side: Handle<Image>,
 }
 
 #[derive(AssetCollection, Resource)]
@@ -120,6 +122,7 @@ enum SideType {
     Regular,
     SpeedUp,
     SlowDown,
+    Directional,
 }
 
 #[derive(Component)]
@@ -213,7 +216,13 @@ fn game_setup(
     asset_server: Res<AssetServer>,
 ) {
     let player_shape_radius: f32 = 50.0;
-    let side_sprite_custom_size = Vec2::new((player_shape_radius.powi(2) * 2.0).sqrt(), 6.0);
+    let side_sprite_original_width = 100.0;
+    let side_sprite_original_height = 10.0;
+    let side_sprite_custom_width = (player_shape_radius.powi(2) * 2.0).sqrt();
+    let side_sprite_custom_size = Vec2::new(
+        side_sprite_custom_width,
+        side_sprite_original_height * (side_sprite_custom_width / side_sprite_original_width),
+    );
     let side_collider = Collider::segment(
         Vec2::new(-player_shape_radius / 2.0, 0.0),
         Vec2::new(player_shape_radius / 2.0, 0.0),
@@ -300,7 +309,7 @@ fn game_setup(
                 });
 
             // side 3
-            spawn_side(parent, SideType::SlowDown, &image_assets)
+            spawn_side(parent, SideType::Directional, &image_assets)
                 .insert(SideId(3))
                 .insert(side_collider.clone())
                 .insert(
@@ -466,6 +475,7 @@ fn spawn_side<'w, 's, 'a>(
     let mut side = parent.spawn(ActiveEvents::COLLISION_EVENTS);
 
     match side_type {
+        SideType::Regular => side.insert(Restitution::coefficient(1.0)),
         SideType::SpeedUp => side
             .insert(SpriteBundle {
                 texture: image_assets.bouncy_side.clone(),
@@ -478,7 +488,12 @@ fn spawn_side<'w, 's, 'a>(
                 ..default()
             })
             .insert(Restitution::coefficient(0.25)),
-        SideType::Regular => side.insert(Restitution::coefficient(1.0)),
+        SideType::Directional => side
+            .insert(SpriteBundle {
+                texture: image_assets.directional_side.clone(),
+                ..default()
+            })
+            .insert(Restitution::coefficient(1.0)),
     };
 
     side.insert(side_type);
@@ -639,12 +654,11 @@ fn collisions(
                         PlaybackSettings::ONCE.with_volume(HIT_SOUND_VOLUME),
                     );
 
-                    if one_has_matching_component(&SideType::SpeedUp, *a, *b, world) {
-                        audio.play(audio_assets.up.clone());
-                    }
-
-                    if one_has_matching_component(&SideType::SlowDown, *a, *b, world) {
-                        audio.play(audio_assets.down.clone());
+                    if let Some((side_type, _)) =
+                        get_component_from_either::<SideType>(*a, *b, world)
+                    {
+                        // a ball has hit a side
+                        apply_side_effect(side_type, &audio, &audio_assets);
                     }
                 }
             }
@@ -672,6 +686,7 @@ fn get_component_from_either<T: Component>(
 }
 
 /// Determines if either of the provided entities has a component with a specific value
+/// TODO remove?
 fn one_has_matching_component<T: Component + PartialEq>(
     component: &T,
     a: Entity,
@@ -680,6 +695,20 @@ fn one_has_matching_component<T: Component + PartialEq>(
 ) -> bool {
     world.get::<T>(a).map(|c| c == component).unwrap_or(false)
         || world.get::<T>(b).map(|c| c == component).unwrap_or(false)
+}
+
+/// Applies the effect of a side
+fn apply_side_effect(side_type: &SideType, audio: &Res<Audio>, audio_assets: &Res<AudioAssets>) {
+    match side_type {
+        SideType::Regular => (),
+        SideType::SpeedUp => {
+            audio.play(audio_assets.up.clone());
+        }
+        SideType::SlowDown => {
+            audio.play(audio_assets.down.clone());
+        }
+        SideType::Directional => (), //TODO
+    };
 }
 
 /// Keeps the score display up to date

@@ -70,6 +70,7 @@ impl Plugin for GamePlugin {
             );
 
         app.insert_resource(Score(0))
+            .insert_resource(EntitiesToDespawn(Vec::new()))
             .add_system(spawn_balls.run_if(in_state(GameState::Game)))
             .add_system(player_movement.run_if(in_state(GameState::Game)))
             .add_system(collisions.run_if(in_state(GameState::Game)))
@@ -98,7 +99,8 @@ impl Plugin for GamePlugin {
                     .after(handle_freeze_others_effect)
                     .run_if(in_state(GameState::Game)),
             )
-            .add_system(unfreeze_entities.run_if(in_state(GameState::Game)));
+            .add_system(unfreeze_entities.run_if(in_state(GameState::Game)))
+            .add_system(despawn_entities.in_base_set(CoreSet::PostUpdate));
     }
 }
 
@@ -129,6 +131,9 @@ struct AudioAssets {
     #[asset(path = "sounds/bad.ogg")]
     bad: Handle<AudioSource>,
 }
+
+#[derive(Resource)]
+struct EntitiesToDespawn(Vec<Entity>);
 
 #[derive(Component)]
 struct LoadingComponent;
@@ -703,6 +708,7 @@ fn collisions(
     mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
     mut score: ResMut<Score>,
+    mut entities_to_despawn: ResMut<EntitiesToDespawn>,
     audio: Res<Audio>,
     audio_assets: Res<AudioAssets>,
     balls_query: Query<&Ball>,
@@ -713,6 +719,10 @@ fn collisions(
         if let CollisionEvent::Started(a, b, _) = event {
             if let Some((ball, ball_entity)) = get_either(*a, *b, &balls_query) {
                 // a ball has hit something
+                if entities_to_despawn.0.contains(&ball_entity) {
+                    // this ball is going to be despawned, so don't mess with it any more
+                    continue;
+                }
                 unfreeze_entity(ball_entity, &mut commands);
                 if let Some((score_area, _)) = get_either(*a, *b, &score_areas_query) {
                     // a ball has hit a score area
@@ -729,7 +739,7 @@ fn collisions(
                             PlaybackSettings::ONCE.with_volume(BAD_SCORE_VOLUME * MASTER_VOLUME),
                         );
                     }
-                    commands.entity(ball_entity).despawn_recursive();
+                    entities_to_despawn.0.push(ball_entity);
                 } else {
                     // a ball has hit something that's not a score area
                     audio.play_with_settings(
@@ -823,6 +833,7 @@ fn handle_slow_down_effect(
 fn handle_freeze_others_effect(
     mut commands: Commands,
     query: Query<Entity, Added<FreezeOthersEffect>>,
+    mut frozen_query: Query<&mut Frozen>,
     balls_query: Query<(Entity, &Velocity), With<Ball>>,
     audio: Res<Audio>,
     audio_assets: Res<AudioAssets>,
@@ -830,10 +841,16 @@ fn handle_freeze_others_effect(
     for entity in query.iter() {
         for (ball_entity, velocity) in balls_query.iter() {
             if ball_entity != entity {
-                commands.entity(ball_entity).insert(Frozen {
-                    unfreeze_at: Instant::now() + FREEZE_DURATION,
-                    original_velocity: *velocity,
-                });
+                if let Ok(mut frozen) = frozen_query.get_mut(ball_entity) {
+                    // the ball is already frozen, so just update its unfreeze time
+                    frozen.unfreeze_at = Instant::now() + FREEZE_DURATION;
+                } else {
+                    // the ball is not currently frozen, so freeze it
+                    commands.entity(ball_entity).insert(Frozen {
+                        unfreeze_at: Instant::now() + FREEZE_DURATION,
+                        original_velocity: *velocity,
+                    });
+                }
             }
         }
         //TODO sound effect
@@ -879,5 +896,12 @@ fn update_score_display(
 ) {
     for mut score_text in score_text_query.iter_mut() {
         score_text.sections[0].value = format!("Score: {}", score.0);
+    }
+}
+
+/// Despawns entities that need to be despawned
+fn despawn_entities(mut commands: Commands, mut entities_to_despawn: ResMut<EntitiesToDespawn>) {
+    for entity in entities_to_despawn.0.drain(0..) {
+        commands.entity(entity).despawn_recursive();
     }
 }

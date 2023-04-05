@@ -16,9 +16,10 @@ const MOVE_DOWN_KEY: KeyCode = KeyCode::S;
 const ROTATE_CLOCKWISE_KEY: KeyCode = KeyCode::Right;
 const ROTATE_COUNTERCLOCKWISE_KEY: KeyCode = KeyCode::Left;
 
-const MOVE_SPEED: f32 = 750.0;
+const MOVE_SPEED: f32 = 1000.0;
 const ROTATE_SPEED: f32 = 0.5;
 
+const MASTER_VOLUME: f32 = 0.5;
 const HIT_SOUND_VOLUME: f32 = 0.5;
 const SPAWN_SOUND_VOLUME: f32 = 0.5;
 const GOOD_SCORE_VOLUME: f32 = 0.8;
@@ -41,7 +42,9 @@ const BALL_MAX_START_IMPULSE_Y: f32 = -5.0;
 const BALL_MIN_START_IMPULSE_X: f32 = -10.0;
 const BALL_MAX_START_IMPULSE_X: f32 = 10.0;
 
-const TIME_BETWEEN_BALL_SPAWNS: Duration = Duration::from_secs(3);
+const TIME_BETWEEN_BALL_GROUP_SPAWNS: Duration = Duration::from_secs(10);
+const TIME_BETWEEN_BALL_SPAWNS: Duration = Duration::from_millis(500);
+const BALL_GROUP_SIZE: u32 = 3;
 
 pub struct GamePlugin;
 
@@ -511,45 +514,62 @@ impl Default for SpawnTime {
 
 /// Spawns balls
 fn spawn_balls(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    mut last_spawn_time: Local<SpawnTime>,
+    commands: Commands,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<ColorMaterial>>,
+    mut next_spawn_time: Local<SpawnTime>,
+    mut balls_spawned_in_group: Local<u32>,
     audio_assets: Res<AudioAssets>,
     audio: Res<Audio>,
 ) {
-    if Instant::now().duration_since(last_spawn_time.0) >= TIME_BETWEEN_BALL_SPAWNS {
-        let mut rng = rand::thread_rng();
-        let ball_type = rng.gen::<BallType>();
-        let spawn_point_x = rng.gen_range(BALL_MIN_START_X..=BALL_MAX_START_X);
-        let impulse_x = rng.gen_range(BALL_MIN_START_IMPULSE_X..=BALL_MAX_START_IMPULSE_X);
-        let impulse_y = rng.gen_range(BALL_MIN_START_IMPULSE_Y..=BALL_MAX_START_IMPULSE_Y);
-        spawn_ball(
-            &mut commands,
-            Ball {
-                ball_type,
-                points: 1,
-            },
-            &mut meshes,
-            &mut materials,
-        )
-        .insert(TransformBundle::from(Transform::from_xyz(
-            spawn_point_x,
-            PLAY_AREA_RADIUS - BALL_SIZE - 1.0,
-            0.0,
-        )))
-        .insert(ExternalImpulse {
-            impulse: Vec2::new(impulse_x, impulse_y),
-            ..default()
-        });
+    if Instant::now().duration_since(next_spawn_time.0) > Duration::ZERO {
+        spawn_random_ball(commands, meshes, materials);
 
         audio.play_with_settings(
             audio_assets.launch.clone(),
-            PlaybackSettings::ONCE.with_volume(SPAWN_SOUND_VOLUME),
+            PlaybackSettings::ONCE.with_volume(SPAWN_SOUND_VOLUME * MASTER_VOLUME),
         );
 
-        last_spawn_time.0 = Instant::now();
+        *balls_spawned_in_group += 1;
+
+        if *balls_spawned_in_group >= BALL_GROUP_SIZE {
+            *balls_spawned_in_group = 0;
+            next_spawn_time.0 = Instant::now() + TIME_BETWEEN_BALL_GROUP_SPAWNS;
+        } else {
+            next_spawn_time.0 = Instant::now() + TIME_BETWEEN_BALL_SPAWNS;
+        }
     }
+}
+
+/// Spawns a random ball at a random point with a random initial impulse
+fn spawn_random_ball(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    let mut rng = rand::thread_rng();
+    let ball_type = rng.gen::<BallType>();
+    let spawn_point_x = rng.gen_range(BALL_MIN_START_X..=BALL_MAX_START_X);
+    let impulse_x = rng.gen_range(BALL_MIN_START_IMPULSE_X..=BALL_MAX_START_IMPULSE_X);
+    let impulse_y = rng.gen_range(BALL_MIN_START_IMPULSE_Y..=BALL_MAX_START_IMPULSE_Y);
+    spawn_ball(
+        &mut commands,
+        Ball {
+            ball_type,
+            points: 1,
+        },
+        &mut meshes,
+        &mut materials,
+    )
+    .insert(TransformBundle::from(Transform::from_xyz(
+        spawn_point_x,
+        PLAY_AREA_RADIUS - BALL_SIZE - 1.0,
+        0.0,
+    )))
+    .insert(ExternalImpulse {
+        impulse: Vec2::new(impulse_x, impulse_y),
+        ..default()
+    });
 }
 
 /// Spawns a ball
@@ -637,13 +657,13 @@ fn collisions(
                         new_score += i32::from(ball.points);
                         audio.play_with_settings(
                             audio_assets.good.clone(),
-                            PlaybackSettings::ONCE.with_volume(GOOD_SCORE_VOLUME),
+                            PlaybackSettings::ONCE.with_volume(GOOD_SCORE_VOLUME * MASTER_VOLUME),
                         );
                     } else {
                         new_score -= i32::from(ball.points);
                         audio.play_with_settings(
                             audio_assets.bad.clone(),
-                            PlaybackSettings::ONCE.with_volume(BAD_SCORE_VOLUME),
+                            PlaybackSettings::ONCE.with_volume(BAD_SCORE_VOLUME * MASTER_VOLUME),
                         );
                     }
                     commands.entity(ball_entity).despawn_recursive();
@@ -651,7 +671,7 @@ fn collisions(
                     // a ball has hit something that's not a score area
                     audio.play_with_settings(
                         audio_assets.hit.clone(),
-                        PlaybackSettings::ONCE.with_volume(HIT_SOUND_VOLUME),
+                        PlaybackSettings::ONCE.with_volume(HIT_SOUND_VOLUME * MASTER_VOLUME),
                     );
 
                     if let Some((side_type, _)) =

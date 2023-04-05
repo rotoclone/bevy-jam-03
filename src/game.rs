@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use bevy::{ecs::system::EntityCommands, sprite::MaterialMesh2dBundle};
 use bevy_asset_loader::prelude::*;
-use bevy_rapier2d::prelude::*;
+use bevy_rapier2d::{prelude::*, rapier::prelude::RigidBodyType};
 use iyes_progress::{ProgressCounter, ProgressPlugin};
 use rand::{distributions::Standard, prelude::Distribution, Rng};
 
@@ -35,16 +35,18 @@ const WALL_COLOR: Color = Color::Rgba {
 const PLAY_AREA_RADIUS: f32 = WINDOW_HEIGHT / 2.0;
 
 const BALL_SIZE: f32 = 15.0;
-const BALL_MIN_START_X: f32 = -25.0;
-const BALL_MAX_START_X: f32 = 25.0;
+const BALL_MIN_START_X: f32 = -PLAY_AREA_RADIUS / 2.0;
+const BALL_MAX_START_X: f32 = PLAY_AREA_RADIUS / 2.0;
 const BALL_MIN_START_IMPULSE_Y: f32 = -20.0;
 const BALL_MAX_START_IMPULSE_Y: f32 = -5.0;
 const BALL_MIN_START_IMPULSE_X: f32 = -10.0;
 const BALL_MAX_START_IMPULSE_X: f32 = 10.0;
 
-const TIME_BETWEEN_BALL_GROUP_SPAWNS: Duration = Duration::from_secs(10);
+const TIME_BETWEEN_BALL_GROUP_SPAWNS: Duration = Duration::from_secs(5);
 const TIME_BETWEEN_BALL_SPAWNS: Duration = Duration::from_millis(500);
-const BALL_GROUP_SIZE: u32 = 3;
+const BALL_GROUP_SIZE: u32 = 5;
+
+const FREEZE_DURATION: Duration = Duration::from_secs(2);
 
 pub struct GamePlugin;
 
@@ -75,7 +77,28 @@ impl Plugin for GamePlugin {
                 update_score_display
                     .after(collisions)
                     .run_if(in_state(GameState::Game)),
-            );
+            )
+            .add_system(
+                handle_speed_up_effect
+                    .after(collisions)
+                    .run_if(in_state(GameState::Game)),
+            )
+            .add_system(
+                handle_slow_down_effect
+                    .after(collisions)
+                    .run_if(in_state(GameState::Game)),
+            )
+            .add_system(
+                handle_freeze_others_effect
+                    .after(collisions)
+                    .run_if(in_state(GameState::Game)),
+            )
+            .add_system(
+                freeze_entities
+                    .after(handle_freeze_others_effect)
+                    .run_if(in_state(GameState::Game)),
+            )
+            .add_system(unfreeze_entities.run_if(in_state(GameState::Game)));
     }
 }
 
@@ -87,6 +110,8 @@ struct ImageAssets {
     non_bouncy_side: Handle<Image>,
     #[asset(path = "images/directional_side.png")]
     directional_side: Handle<Image>,
+    #[asset(path = "images/directional_side.png")] //TODO
+    freeze_others_side: Handle<Image>,
 }
 
 #[derive(AssetCollection, Resource)]
@@ -120,12 +145,42 @@ struct PlayerShape;
 #[derive(Component, PartialEq)]
 struct SideId(u8);
 
-#[derive(Component, PartialEq)]
+#[derive(Component, PartialEq, Clone, Copy)]
 enum SideType {
     Regular,
     SpeedUp,
     SlowDown,
-    Directional,
+    FreezeOthers,
+}
+
+impl SideType {
+    /// Adds the effect component that corresponds with this side to the provided entity
+    fn add_side_effect(&self, entity: Entity, commands: &mut Commands) {
+        match self {
+            SideType::Regular => commands.entity(entity).insert(NoEffect),
+            SideType::SpeedUp => commands.entity(entity).insert(SpeedUpEffect),
+            SideType::SlowDown => commands.entity(entity).insert(SlowDownEffect),
+            SideType::FreezeOthers => commands.entity(entity).insert(FreezeOthersEffect),
+        };
+    }
+}
+
+#[derive(Component)]
+struct NoEffect;
+
+#[derive(Component)]
+struct SpeedUpEffect;
+
+#[derive(Component)]
+struct SlowDownEffect;
+
+#[derive(Component)]
+struct FreezeOthersEffect;
+
+#[derive(Component)]
+struct Frozen {
+    unfreeze_at: Instant,
+    original_velocity: Velocity,
 }
 
 #[derive(Component)]
@@ -312,7 +367,7 @@ fn game_setup(
                 });
 
             // side 3
-            spawn_side(parent, SideType::Directional, &image_assets)
+            spawn_side(parent, SideType::FreezeOthers, &image_assets)
                 .insert(SideId(3))
                 .insert(side_collider.clone())
                 .insert(
@@ -330,6 +385,7 @@ fn game_setup(
         });
 
     // score areas
+    /* TODO
     let mut score_area_a_color = BallType::A.color();
     score_area_a_color.set_a(0.1);
     commands
@@ -383,6 +439,7 @@ fn game_setup(
         )))
         .insert(GameComponent)
         .insert(ScoreArea(BallType::C));
+    */
 
     // left wall
     commands
@@ -412,6 +469,7 @@ fn game_setup(
         })
         .insert(Collider::cuboid(PLAY_AREA_RADIUS, PLAY_AREA_RADIUS))
         .insert(Restitution::coefficient(1.0))
+        .insert(ScoreArea(BallType::A)) //TODO remove
         .insert(GameComponent);
 
     // right wall
@@ -442,6 +500,7 @@ fn game_setup(
         })
         .insert(Collider::cuboid(PLAY_AREA_RADIUS, PLAY_AREA_RADIUS))
         .insert(Restitution::coefficient(1.0))
+        .insert(ScoreArea(BallType::B)) //TODO remove
         .insert(GameComponent);
 
     // score display
@@ -484,16 +543,16 @@ fn spawn_side<'w, 's, 'a>(
                 texture: image_assets.bouncy_side.clone(),
                 ..default()
             })
-            .insert(Restitution::coefficient(1.25)),
+            .insert(Restitution::coefficient(1.5)),
         SideType::SlowDown => side
             .insert(SpriteBundle {
                 texture: image_assets.non_bouncy_side.clone(),
                 ..default()
             })
-            .insert(Restitution::coefficient(0.25)),
-        SideType::Directional => side
+            .insert(Restitution::coefficient(0.2)),
+        SideType::FreezeOthers => side
             .insert(SpriteBundle {
-                texture: image_assets.directional_side.clone(),
+                texture: image_assets.freeze_others_side.clone(),
                 ..default()
             })
             .insert(Restitution::coefficient(1.0)),
@@ -548,7 +607,8 @@ fn spawn_random_ball(
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let mut rng = rand::thread_rng();
-    let ball_type = rng.gen::<BallType>();
+    //TODO let ball_type = rng.gen::<BallType>();
+    let ball_type = BallType::A;
     let spawn_point_x = rng.gen_range(BALL_MIN_START_X..=BALL_MAX_START_X);
     let impulse_x = rng.gen_range(BALL_MIN_START_IMPULSE_X..=BALL_MAX_START_IMPULSE_X);
     let impulse_y = rng.gen_range(BALL_MIN_START_IMPULSE_Y..=BALL_MAX_START_IMPULSE_Y);
@@ -596,6 +656,7 @@ fn spawn_ball<'w, 's, 'a>(
             coefficient: 1.0,
             combine_rule: CoefficientCombineRule::Multiply,
         })
+        .insert(Velocity::zero())
         .insert(ActiveEvents::COLLISION_EVENTS)
         .insert(GameComponent)
         .insert(ball_component);
@@ -641,26 +702,28 @@ fn player_movement(
 fn collisions(
     mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
-    score: Res<Score>,
+    mut score: ResMut<Score>,
     audio: Res<Audio>,
     audio_assets: Res<AudioAssets>,
-    world: &World,
+    balls_query: Query<&Ball>,
+    score_areas_query: Query<&ScoreArea>,
+    sides_query: Query<&SideType>,
 ) {
-    let mut new_score = score.0;
     for event in collision_events.iter() {
         if let CollisionEvent::Started(a, b, _) = event {
-            if let Some((ball, ball_entity)) = get_component_from_either::<Ball>(*a, *b, world) {
-                if let Some((score_area, _)) = get_component_from_either::<ScoreArea>(*a, *b, world)
-                {
+            if let Some((ball, ball_entity)) = get_either(*a, *b, &balls_query) {
+                // a ball has hit something
+                unfreeze_entity(ball_entity, &mut commands);
+                if let Some((score_area, _)) = get_either(*a, *b, &score_areas_query) {
                     // a ball has hit a score area
                     if ball.ball_type == score_area.0 {
-                        new_score += i32::from(ball.points);
+                        score.0 += i32::from(ball.points);
                         audio.play_with_settings(
                             audio_assets.good.clone(),
                             PlaybackSettings::ONCE.with_volume(GOOD_SCORE_VOLUME * MASTER_VOLUME),
                         );
                     } else {
-                        new_score -= i32::from(ball.points);
+                        score.0 -= i32::from(ball.points);
                         audio.play_with_settings(
                             audio_assets.bad.clone(),
                             PlaybackSettings::ONCE.with_volume(BAD_SCORE_VOLUME * MASTER_VOLUME),
@@ -674,21 +737,34 @@ fn collisions(
                         PlaybackSettings::ONCE.with_volume(HIT_SOUND_VOLUME * MASTER_VOLUME),
                     );
 
-                    if let Some((side_type, _)) =
-                        get_component_from_either::<SideType>(*a, *b, world)
-                    {
+                    if let Some((side_type, _)) = get_either(*a, *b, &sides_query) {
                         // a ball has hit a side
-                        apply_side_effect(side_type, &audio, &audio_assets);
+                        side_type.add_side_effect(ball_entity, &mut commands);
                     }
                 }
             }
         }
     }
+}
 
-    commands.insert_resource(Score(new_score));
+fn get_either<'a, T: Component>(
+    a: Entity,
+    b: Entity,
+    query: &'a Query<&T>,
+) -> Option<(&'a T, Entity)> {
+    if let Ok(component) = query.get(a) {
+        return Some((component, a));
+    }
+
+    if let Ok(component) = query.get(b) {
+        return Some((component, b));
+    }
+
+    None
 }
 
 /// Gets a certain type of component from one of the provided entities
+/// TODO remove?
 fn get_component_from_either<T: Component>(
     a: Entity,
     b: Entity,
@@ -717,18 +793,83 @@ fn one_has_matching_component<T: Component + PartialEq>(
         || world.get::<T>(b).map(|c| c == component).unwrap_or(false)
 }
 
-/// Applies the effect of a side
-fn apply_side_effect(side_type: &SideType, audio: &Res<Audio>, audio_assets: &Res<AudioAssets>) {
-    match side_type {
-        SideType::Regular => (),
-        SideType::SpeedUp => {
-            audio.play(audio_assets.up.clone());
+/// Deals with entities that have had the speed up effect added
+fn handle_speed_up_effect(
+    mut commands: Commands,
+    query: Query<Entity, Added<SpeedUpEffect>>,
+    audio: Res<Audio>,
+    audio_assets: Res<AudioAssets>,
+) {
+    for entity in query.iter() {
+        audio.play(audio_assets.up.clone());
+        commands.entity(entity).remove::<SpeedUpEffect>();
+    }
+}
+
+/// Deals with entities that have had the slow down effect added
+fn handle_slow_down_effect(
+    mut commands: Commands,
+    query: Query<Entity, Added<SlowDownEffect>>,
+    audio: Res<Audio>,
+    audio_assets: Res<AudioAssets>,
+) {
+    for entity in query.iter() {
+        audio.play(audio_assets.down.clone());
+        commands.entity(entity).remove::<SlowDownEffect>();
+    }
+}
+
+/// Deals with entities that have had the freeze others effect added
+fn handle_freeze_others_effect(
+    mut commands: Commands,
+    query: Query<Entity, Added<FreezeOthersEffect>>,
+    balls_query: Query<(Entity, &Velocity), With<Ball>>,
+    audio: Res<Audio>,
+    audio_assets: Res<AudioAssets>,
+) {
+    for entity in query.iter() {
+        for (ball_entity, velocity) in balls_query.iter() {
+            if ball_entity != entity {
+                commands.entity(ball_entity).insert(Frozen {
+                    unfreeze_at: Instant::now() + FREEZE_DURATION,
+                    original_velocity: *velocity,
+                });
+            }
         }
-        SideType::SlowDown => {
-            audio.play(audio_assets.down.clone());
+        //TODO sound effect
+        commands.entity(entity).remove::<FreezeOthersEffect>();
+    }
+}
+
+/// Handles freezing entities
+fn freeze_entities(
+    mut commands: Commands,
+    frozen_query: Query<Entity, (Added<Frozen>, With<RigidBody>)>,
+) {
+    for entity in frozen_query.iter() {
+        commands.entity(entity).insert(RigidBody::Fixed);
+    }
+}
+
+/// Handles unfreezing entities
+fn unfreeze_entities(
+    mut commands: Commands,
+    frozen_query: Query<(Entity, &Frozen), With<RigidBody>>,
+) {
+    for (entity, frozen) in frozen_query.iter() {
+        if Instant::now().duration_since(frozen.unfreeze_at) > Duration::ZERO {
+            commands.entity(entity).insert(frozen.original_velocity);
+            unfreeze_entity(entity, &mut commands);
         }
-        SideType::Directional => (), //TODO
-    };
+    }
+}
+
+/// Unfreezes the provided entity
+fn unfreeze_entity(entity: Entity, commands: &mut Commands) {
+    commands
+        .entity(entity)
+        .insert(RigidBody::Dynamic)
+        .remove::<Frozen>();
 }
 
 /// Keeps the score display up to date

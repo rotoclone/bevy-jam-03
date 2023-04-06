@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use bevy::{ecs::system::EntityCommands, sprite::MaterialMesh2dBundle};
 use bevy_asset_loader::prelude::*;
-use bevy_rapier2d::{prelude::*, rapier::prelude::RigidBodyType};
+use bevy_rapier2d::prelude::*;
 use iyes_progress::{ProgressCounter, ProgressPlugin};
 use rand::{distributions::Standard, prelude::Distribution, Rng};
 
@@ -34,17 +34,21 @@ const WALL_COLOR: Color = Color::Rgba {
 
 const PLAY_AREA_RADIUS: f32 = WINDOW_HEIGHT / 2.0;
 
-const BALL_SIZE: f32 = 15.0;
+const PLAYER_SHAPE_RADIUS: f32 = 60.0;
+const PLAYER_COLLISION_GROUP: Group = Group::GROUP_1;
+
+const BALL_SIZE: f32 = 18.0;
 const BALL_MIN_START_X: f32 = -PLAY_AREA_RADIUS / 2.0;
 const BALL_MAX_START_X: f32 = PLAY_AREA_RADIUS / 2.0;
 const BALL_MIN_START_IMPULSE_Y: f32 = -20.0;
 const BALL_MAX_START_IMPULSE_Y: f32 = -5.0;
 const BALL_MIN_START_IMPULSE_X: f32 = -10.0;
 const BALL_MAX_START_IMPULSE_X: f32 = 10.0;
+const BALL_COLLISION_GROUP: Group = Group::GROUP_2;
 
 const TIME_BETWEEN_BALL_GROUP_SPAWNS: Duration = Duration::from_secs(5);
 const TIME_BETWEEN_BALL_SPAWNS: Duration = Duration::from_millis(500);
-const BALL_GROUP_SIZE: u32 = 5;
+const BALL_GROUP_SIZE: u32 = 4;
 
 const FREEZE_DURATION: Duration = Duration::from_secs(2);
 
@@ -92,11 +96,6 @@ impl Plugin for GamePlugin {
             .add_system(
                 handle_freeze_others_effect
                     .after(collisions)
-                    .run_if(in_state(GameState::Game)),
-            )
-            .add_system(
-                freeze_entities
-                    .after(handle_freeze_others_effect)
                     .run_if(in_state(GameState::Game)),
             )
             .add_system(unfreeze_entities.run_if(in_state(GameState::Game)))
@@ -278,23 +277,22 @@ fn game_setup(
     image_assets: Res<ImageAssets>,
     asset_server: Res<AssetServer>,
 ) {
-    let player_shape_radius: f32 = 50.0;
     let side_sprite_original_width = 100.0;
     let side_sprite_original_height = 10.0;
-    let side_sprite_custom_width = (player_shape_radius.powi(2) * 2.0).sqrt();
+    let side_sprite_custom_width = (PLAYER_SHAPE_RADIUS.powi(2) * 2.0).sqrt();
     let side_sprite_custom_size = Vec2::new(
         side_sprite_custom_width,
         side_sprite_original_height * (side_sprite_custom_width / side_sprite_original_width),
     );
     let side_collider = Collider::segment(
-        Vec2::new(-player_shape_radius / 2.0, 0.0),
-        Vec2::new(player_shape_radius / 2.0, 0.0),
+        Vec2::new(-PLAYER_SHAPE_RADIUS / 2.0, 0.0),
+        Vec2::new(PLAYER_SHAPE_RADIUS / 2.0, 0.0),
     );
 
     commands
         .spawn(MaterialMesh2dBundle {
             mesh: meshes
-                .add(shape::RegularPolygon::new(player_shape_radius, 4).into())
+                .add(shape::RegularPolygon::new(PLAYER_SHAPE_RADIUS, 4).into())
                 .into(),
             material: materials.add(ColorMaterial::from(Color::Rgba {
                 red: 1.0,
@@ -326,8 +324,8 @@ fn game_setup(
                 .insert(side_collider.clone())
                 .insert(
                     Transform::from_translation(Vec3::new(
-                        -player_shape_radius / 2.0,
-                        player_shape_radius / 2.0,
+                        -PLAYER_SHAPE_RADIUS / 2.0,
+                        PLAYER_SHAPE_RADIUS / 2.0,
                         0.0,
                     ))
                     .with_rotation(Quat::from_rotation_z(45.0_f32.to_radians())),
@@ -343,8 +341,8 @@ fn game_setup(
                 .insert(side_collider.clone())
                 .insert(
                     Transform::from_translation(Vec3::new(
-                        player_shape_radius / 2.0,
-                        player_shape_radius / 2.0,
+                        PLAYER_SHAPE_RADIUS / 2.0,
+                        PLAYER_SHAPE_RADIUS / 2.0,
                         0.0,
                     ))
                     .with_rotation(Quat::from_rotation_z(-45.0_f32.to_radians())),
@@ -360,8 +358,8 @@ fn game_setup(
                 .insert(side_collider.clone())
                 .insert(
                     Transform::from_translation(Vec3::new(
-                        player_shape_radius / 2.0,
-                        -player_shape_radius / 2.0,
+                        PLAYER_SHAPE_RADIUS / 2.0,
+                        -PLAYER_SHAPE_RADIUS / 2.0,
                         0.0,
                     ))
                     .with_rotation(Quat::from_rotation_z(-135.0_f32.to_radians())),
@@ -377,8 +375,8 @@ fn game_setup(
                 .insert(side_collider.clone())
                 .insert(
                     Transform::from_translation(Vec3::new(
-                        -player_shape_radius / 2.0,
-                        -player_shape_radius / 2.0,
+                        -PLAYER_SHAPE_RADIUS / 2.0,
+                        -PLAYER_SHAPE_RADIUS / 2.0,
                         0.0,
                     ))
                     .with_rotation(Quat::from_rotation_z(135.0_f32.to_radians())),
@@ -446,6 +444,28 @@ fn game_setup(
         .insert(ScoreArea(BallType::C));
     */
 
+    // player boundary
+    commands
+        .spawn(SpriteBundle {
+            transform: Transform::from_translation(Vec3::new(0.0, PLAY_AREA_RADIUS / 3.0, 0.0)),
+            sprite: Sprite {
+                color: Color::Rgba {
+                    red: 0.2,
+                    green: 0.2,
+                    blue: 0.2,
+                    alpha: 0.2,
+                },
+                custom_size: Some(Vec2::new(PLAY_AREA_RADIUS * 2.0, 4.0)),
+                ..default()
+            },
+            ..default()
+        })
+        .insert(Collider::cuboid(PLAY_AREA_RADIUS, 2.0))
+        // only collide with player
+        .insert(CollisionGroups::new(Group::GROUP_3, PLAYER_COLLISION_GROUP))
+        .insert(Restitution::coefficient(1.0))
+        .insert(GameComponent);
+
     // left wall
     commands
         .spawn(SpriteBundle {
@@ -474,7 +494,7 @@ fn game_setup(
         })
         .insert(Collider::cuboid(PLAY_AREA_RADIUS, PLAY_AREA_RADIUS))
         .insert(Restitution::coefficient(1.0))
-        .insert(ScoreArea(BallType::A)) //TODO remove
+        .insert(ScoreArea(BallType::A)) //TODO
         .insert(GameComponent);
 
     // right wall
@@ -505,7 +525,7 @@ fn game_setup(
         })
         .insert(Collider::cuboid(PLAY_AREA_RADIUS, PLAY_AREA_RADIUS))
         .insert(Restitution::coefficient(1.0))
-        .insert(ScoreArea(BallType::B)) //TODO remove
+        .insert(ScoreArea(BallType::B)) //TODO
         .insert(GameComponent);
 
     // score display
@@ -548,7 +568,7 @@ fn spawn_side<'w, 's, 'a>(
                 texture: image_assets.bouncy_side.clone(),
                 ..default()
             })
-            .insert(Restitution::coefficient(1.5)),
+            .insert(Restitution::coefficient(2.0)),
         SideType::SlowDown => side
             .insert(SpriteBundle {
                 texture: image_assets.non_bouncy_side.clone(),
@@ -560,10 +580,14 @@ fn spawn_side<'w, 's, 'a>(
                 texture: image_assets.freeze_others_side.clone(),
                 ..default()
             })
-            .insert(Restitution::coefficient(1.0)),
+            .insert(Restitution::coefficient(0.1)),
     };
 
-    side.insert(side_type);
+    side.insert(CollisionGroups {
+        memberships: PLAYER_COLLISION_GROUP,
+        filters: Group::all(),
+    })
+    .insert(side_type);
 
     side
 }
@@ -649,8 +673,8 @@ fn spawn_ball<'w, 's, 'a>(
     ball.insert(Collider::ball(BALL_SIZE))
         // make balls go through each other
         .insert(CollisionGroups::new(
-            Group::GROUP_1,
-            Group::all().difference(Group::GROUP_1),
+            BALL_COLLISION_GROUP,
+            Group::all().difference(BALL_COLLISION_GROUP),
         ))
         .insert(MaterialMesh2dBundle {
             mesh: meshes.add(shape::Circle::new(BALL_SIZE).into()).into(),
@@ -663,6 +687,7 @@ fn spawn_ball<'w, 's, 'a>(
         })
         .insert(Velocity::zero())
         .insert(ActiveEvents::COLLISION_EVENTS)
+        .insert(Sleeping::disabled())
         .insert(GameComponent)
         .insert(ball_component);
 
@@ -773,36 +798,6 @@ fn get_either<'a, T: Component>(
     None
 }
 
-/// Gets a certain type of component from one of the provided entities
-/// TODO remove?
-fn get_component_from_either<T: Component>(
-    a: Entity,
-    b: Entity,
-    world: &World,
-) -> Option<(&T, Entity)> {
-    if let Some(component) = world.get::<T>(a) {
-        return Some((component, a));
-    }
-
-    if let Some(component) = world.get::<T>(b) {
-        return Some((component, b));
-    }
-
-    None
-}
-
-/// Determines if either of the provided entities has a component with a specific value
-/// TODO remove?
-fn one_has_matching_component<T: Component + PartialEq>(
-    component: &T,
-    a: Entity,
-    b: Entity,
-    world: &World,
-) -> bool {
-    world.get::<T>(a).map(|c| c == component).unwrap_or(false)
-        || world.get::<T>(b).map(|c| c == component).unwrap_or(false)
-}
-
 /// Deals with entities that have had the speed up effect added
 fn handle_speed_up_effect(
     mut commands: Commands,
@@ -846,25 +841,18 @@ fn handle_freeze_others_effect(
                     frozen.unfreeze_at = Instant::now() + FREEZE_DURATION;
                 } else {
                     // the ball is not currently frozen, so freeze it
-                    commands.entity(ball_entity).insert(Frozen {
-                        unfreeze_at: Instant::now() + FREEZE_DURATION,
-                        original_velocity: *velocity,
-                    });
+                    commands
+                        .entity(ball_entity)
+                        .insert(Frozen {
+                            unfreeze_at: Instant::now() + FREEZE_DURATION,
+                            original_velocity: *velocity,
+                        })
+                        .insert(RigidBody::Fixed);
                 }
             }
         }
         //TODO sound effect
         commands.entity(entity).remove::<FreezeOthersEffect>();
-    }
-}
-
-/// Handles freezing entities
-fn freeze_entities(
-    mut commands: Commands,
-    frozen_query: Query<Entity, (Added<Frozen>, With<RigidBody>)>,
-) {
-    for entity in frozen_query.iter() {
-        commands.entity(entity).insert(RigidBody::Fixed);
     }
 }
 
@@ -875,8 +863,8 @@ fn unfreeze_entities(
 ) {
     for (entity, frozen) in frozen_query.iter() {
         if Instant::now().duration_since(frozen.unfreeze_at) > Duration::ZERO {
-            commands.entity(entity).insert(frozen.original_velocity);
             unfreeze_entity(entity, &mut commands);
+            commands.entity(entity).insert(frozen.original_velocity);
         }
     }
 }
@@ -886,6 +874,10 @@ fn unfreeze_entity(entity: Entity, commands: &mut Commands) {
     commands
         .entity(entity)
         .insert(RigidBody::Dynamic)
+        .insert(Sleeping {
+            sleeping: false,
+            ..default()
+        })
         .remove::<Frozen>();
 }
 

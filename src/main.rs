@@ -51,6 +51,10 @@ fn main() {
             ..default()
         }))
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
+        .insert_resource(RapierConfiguration {
+            gravity: Vec2::ZERO,
+            ..default()
+        })
         .add_state::<GameState>()
         .add_startup_system(setup)
         .add_plugin(MenuPlugin)

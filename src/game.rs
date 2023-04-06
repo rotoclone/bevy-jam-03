@@ -4,10 +4,8 @@ use std::{
 };
 
 use bevy::{
-    ecs::{
-        query::{ReadOnlyWorldQuery, WorldQuery},
-        system::EntityCommands,
-    },
+    ecs::{query::ReadOnlyWorldQuery, system::EntityCommands},
+    input::mouse::MouseWheel,
     sprite::MaterialMesh2dBundle,
 };
 use bevy_asset_loader::prelude::*;
@@ -25,8 +23,14 @@ const MOVE_DOWN_KEY: KeyCode = KeyCode::S;
 const ROTATE_CLOCKWISE_KEY: KeyCode = KeyCode::Right;
 const ROTATE_COUNTERCLOCKWISE_KEY: KeyCode = KeyCode::Left;
 
+const INCREASE_ROTATE_SENSITIVITY_KEY: KeyCode = KeyCode::Period;
+const DECREASE_ROTATE_SENSITIVITY_KEY: KeyCode = KeyCode::Comma;
+
+const ROTATE_SENSITIVITY_ADJUST_AMOUNT: f32 = 0.2;
+
 const MOVE_SPEED: f32 = 1000.0;
 const ROTATE_SPEED: f32 = 0.5;
+const SCROLL_ROTATE_SPEED: f32 = 3.0;
 
 const MASTER_VOLUME: f32 = 0.5;
 const HIT_SOUND_VOLUME: f32 = 0.5;
@@ -89,7 +93,18 @@ impl Plugin for GamePlugin {
 
         app.insert_resource(Score(0))
             .insert_resource(EntitiesToDespawn(Vec::new()))
+            .insert_resource(RotateSensitivity(1.0))
             .add_system(spawn_balls.run_if(in_state(GameState::Game)))
+            .add_system(
+                adjust_rotate_sensitivity
+                    .before(player_movement)
+                    .run_if(in_state(GameState::Game)),
+            )
+            .add_system(
+                update_rotate_sensitivity_display
+                    .after(adjust_rotate_sensitivity)
+                    .run_if(in_state(GameState::Game)),
+            )
             .add_system(player_movement.run_if(in_state(GameState::Game)))
             .add_system(collisions.run_if(in_state(GameState::Game)))
             .add_system(
@@ -145,6 +160,9 @@ struct AudioAssets {
 
 #[derive(Resource)]
 struct EntitiesToDespawn(Vec<Entity>);
+
+#[derive(Resource)]
+struct RotateSensitivity(f32);
 
 #[derive(Component)]
 struct LoadingComponent;
@@ -249,6 +267,9 @@ struct Score(i32);
 #[derive(Component)]
 struct ScoreText;
 
+#[derive(Component)]
+struct RotateSensitivityText;
+
 /// Sets up the loading screen.
 fn loading_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
@@ -294,6 +315,7 @@ fn game_setup(
     mut materials: ResMut<Assets<ColorMaterial>>,
     image_assets: Res<ImageAssets>,
     asset_server: Res<AssetServer>,
+    rotate_sensitivity: Res<RotateSensitivity>,
 ) {
     let side_sprite_original_width = 100.0;
     let side_sprite_original_height = 10.0;
@@ -565,7 +587,8 @@ fn game_setup(
             )
             .with_text_alignment(TextAlignment::Center)
             .with_style(Style {
-                margin: UiRect {
+                position_type: PositionType::Absolute,
+                position: UiRect {
                     left: Val::Px(10.0),
                     top: Val::Px(10.0),
                     ..default()
@@ -575,6 +598,31 @@ fn game_setup(
         )
         .insert(GameComponent)
         .insert(ScoreText);
+
+    // rotation sensitivity display
+    commands
+        .spawn(
+            TextBundle::from_section(
+                format!("Rotation sensitivity: {:.1}", rotate_sensitivity.0),
+                TextStyle {
+                    font: asset_server.load(MAIN_FONT),
+                    font_size: 20.0,
+                    color: Color::GRAY,
+                },
+            )
+            .with_text_alignment(TextAlignment::Center)
+            .with_style(Style {
+                position_type: PositionType::Absolute,
+                position: UiRect {
+                    right: Val::Px(5.0),
+                    bottom: Val::Px(5.0),
+                    ..default()
+                },
+                ..default()
+            }),
+        )
+        .insert(GameComponent)
+        .insert(RotateSensitivityText);
 }
 
 /// Spawns a side for the player shape
@@ -721,6 +769,8 @@ fn spawn_ball<'w, 's, 'a>(
 fn player_movement(
     mut player_shape_query: Query<&mut ExternalImpulse, With<PlayerShape>>,
     keycode: Res<Input<KeyCode>>,
+    mut scroll_events: EventReader<MouseWheel>,
+    rotate_sensitivity: Res<RotateSensitivity>,
 ) {
     for mut impulse in &mut player_shape_query {
         // translation
@@ -742,12 +792,29 @@ fn player_movement(
 
         // rotation
         if keycode.pressed(ROTATE_CLOCKWISE_KEY) {
-            impulse.torque_impulse = -ROTATE_SPEED;
+            impulse.torque_impulse = -ROTATE_SPEED * rotate_sensitivity.0;
         }
 
         if keycode.pressed(ROTATE_COUNTERCLOCKWISE_KEY) {
-            impulse.torque_impulse = ROTATE_SPEED;
+            impulse.torque_impulse = ROTATE_SPEED * rotate_sensitivity.0;
         }
+
+        for event in scroll_events.iter() {
+            impulse.torque_impulse = event.y * SCROLL_ROTATE_SPEED * rotate_sensitivity.0;
+        }
+    }
+}
+
+fn adjust_rotate_sensitivity(
+    keycode: Res<Input<KeyCode>>,
+    mut rotate_sensitivity: ResMut<RotateSensitivity>,
+) {
+    if keycode.just_pressed(INCREASE_ROTATE_SENSITIVITY_KEY) {
+        rotate_sensitivity.0 += ROTATE_SENSITIVITY_ADJUST_AMOUNT;
+    }
+
+    if keycode.just_pressed(DECREASE_ROTATE_SENSITIVITY_KEY) {
+        rotate_sensitivity.0 -= ROTATE_SENSITIVITY_ADJUST_AMOUNT;
     }
 }
 
@@ -943,10 +1010,24 @@ fn update_score_display(
     score: Res<Score>,
     mut score_text_query: Query<&mut Text, With<ScoreText>>,
 ) {
-    for mut score_text in score_text_query.iter_mut() {
-        score_text.sections[0].value = format!("Score: {}", score.0);
+    for mut text in score_text_query.iter_mut() {
+        text.sections[0].value = format!("Score: {}", score.0);
     }
 }
+
+/// Keeps the rotation sensitivity display up to date
+fn update_rotate_sensitivity_display(
+    rotate_sensitivity: Res<RotateSensitivity>,
+    mut rotate_sensitivity_text_query: Query<&mut Text, With<RotateSensitivityText>>,
+) {
+    if rotate_sensitivity.is_changed() {
+        for mut text in rotate_sensitivity_text_query.iter_mut() {
+            text.sections[0].value = format!("Rotation sensitivity: {:.1}", rotate_sensitivity.0);
+        }
+    }
+}
+
+//TODO add system to zoom camera based on window size
 
 /// Despawns entities that need to be despawned
 fn despawn_entities(mut commands: Commands, mut entities_to_despawn: ResMut<EntitiesToDespawn>) {

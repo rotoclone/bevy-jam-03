@@ -110,7 +110,6 @@ fn start_button_system(
 ) {
     for interaction in interaction_query.iter() {
         if *interaction == Interaction::Clicked {
-            println!("start button clicked"); //TODO
             next_state.set(GameState::GameLoading);
         }
     }

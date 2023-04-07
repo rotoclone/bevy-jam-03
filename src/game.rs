@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     time::{Duration, Instant},
 };
 
@@ -62,10 +62,6 @@ const BALL_MIN_START_IMPULSE_X: f32 = -10.0;
 const BALL_MAX_START_IMPULSE_X: f32 = 10.0;
 const BALL_COLLISION_GROUP: Group = Group::GROUP_2;
 
-const TIME_BETWEEN_BALL_GROUP_SPAWNS: Duration = Duration::from_secs(10);
-const TIME_BETWEEN_BALL_SPAWNS: Duration = Duration::from_millis(500);
-const BALL_GROUP_SIZE: u32 = 3;
-
 const FREEZE_DURATION: Duration = Duration::from_secs(2);
 const BOUNCE_BACKWARDS_VELOCITY: f32 = 100.0;
 const BOUNCE_BACKWARDS_DISTANCE: f32 = BALL_SIZE + 1.0;
@@ -91,49 +87,60 @@ impl Plugin for GamePlugin {
                 despawn_components_system::<GameComponent>.in_schedule(OnExit(GameState::Game)),
             );
 
-        app.insert_resource(Score(0))
-            .insert_resource(EntitiesToDespawn(Vec::new()))
-            .insert_resource(RotateSensitivity(1.0))
-            .add_system(spawn_balls.run_if(in_state(GameState::Game)))
-            .add_system(
-                adjust_rotate_sensitivity
-                    .before(player_movement)
-                    .run_if(in_state(GameState::Game)),
-            )
-            .add_system(
-                update_rotate_sensitivity_display
-                    .after(adjust_rotate_sensitivity)
-                    .run_if(in_state(GameState::Game)),
-            )
-            .add_system(player_movement.run_if(in_state(GameState::Game)))
-            .add_system(collisions.run_if(in_state(GameState::Game)))
-            .add_system(
-                update_score_display
-                    .after(collisions)
-                    .run_if(in_state(GameState::Game)),
-            )
-            .add_system(
-                handle_speed_up_effect
-                    .after(collisions)
-                    .run_if(in_state(GameState::Game)),
-            )
-            .add_system(
-                handle_freeze_others_effect
-                    .after(collisions)
-                    .run_if(in_state(GameState::Game)),
-            )
-            .add_system(
-                handle_bounce_backwards_effect
-                    .after(collisions)
-                    .run_if(in_state(GameState::Game)),
-            )
-            .add_system(unfreeze_entities.run_if(in_state(GameState::Game)))
-            .add_system(despawn_entities.in_base_set(CoreSet::PostUpdate));
+        app.insert_resource(UnlockedSides(
+            [SideType::NothingSpecial, SideType::SpeedUp].into(),
+        ))
+        .insert_resource(LevelSettings::first_level())
+        .insert_resource(EntitiesToDespawn(Vec::new()))
+        .insert_resource(RotateSensitivity(1.0))
+        .add_system(update_time_display.run_if(in_state(GameState::Game)))
+        .add_system(spawn_balls.run_if(in_state(GameState::Game)))
+        .add_system(
+            adjust_rotate_sensitivity
+                .before(player_movement)
+                .run_if(in_state(GameState::Game)),
+        )
+        .add_system(
+            update_rotate_sensitivity_display
+                .after(adjust_rotate_sensitivity)
+                .run_if(in_state(GameState::Game)),
+        )
+        .add_system(player_movement.run_if(in_state(GameState::Game)))
+        .add_system(collisions.run_if(in_state(GameState::Game)))
+        .add_system(
+            update_score_display
+                .after(collisions)
+                .run_if(in_state(GameState::Game)),
+        )
+        .add_system(
+            handle_speed_up_effect
+                .after(collisions)
+                .run_if(in_state(GameState::Game)),
+        )
+        .add_system(
+            handle_freeze_others_effect
+                .after(collisions)
+                .run_if(in_state(GameState::Game)),
+        )
+        .add_system(
+            handle_bounce_backwards_effect
+                .after(collisions)
+                .run_if(in_state(GameState::Game)),
+        )
+        .add_system(unfreeze_entities.run_if(in_state(GameState::Game)))
+        .add_system(
+            end_level
+                .after(collisions)
+                .run_if(in_state(GameState::Game)),
+        )
+        .add_system(despawn_entities.in_base_set(CoreSet::PostUpdate));
     }
 }
 
 #[derive(AssetCollection, Resource)]
 struct ImageAssets {
+    #[asset(path = "images/regular_side.png")]
+    regular_side: Handle<Image>,
     #[asset(path = "images/bouncy_side.png")]
     bouncy_side: Handle<Image>,
     #[asset(path = "images/freeze_side.png")]
@@ -164,6 +171,84 @@ struct EntitiesToDespawn(Vec<Entity>);
 #[derive(Resource)]
 struct RotateSensitivity(f32);
 
+#[derive(Resource)]
+pub struct LevelSettings {
+    /// The ID of the level
+    pub id: usize,
+    /// Amount of time between spawning groups of balls
+    time_between_groups: Duration,
+    /// Amount of time between spawning balls in the same group
+    time_between_spawns_in_group: Duration,
+    /// Number of balls spawned per group
+    balls_per_group: u32,
+    /// The time limit for the level
+    duration: Duration,
+    /// The minimum score required to complete the level
+    pub min_score: i32,
+    /// The sides that will be unlocked when the level is completed
+    pub sides_to_unlock: Vec<SideType>,
+}
+
+impl LevelSettings {
+    /// Builds settings for the first level
+    fn first_level() -> LevelSettings {
+        LevelSettings {
+            id: 1,
+            time_between_groups: Duration::from_secs(10),
+            time_between_spawns_in_group: Duration::from_millis(500),
+            balls_per_group: 3,
+            duration: Duration::from_secs(30),
+            sides_to_unlock: vec![SideType::FreezeOthers],
+            min_score: 1,
+        }
+    }
+
+    /// Builds settings for the level after this one
+    pub fn next_level(&self) -> LevelSettings {
+        match self.id {
+            1 => LevelSettings {
+                id: 2,
+                time_between_groups: Duration::from_secs(8),
+                time_between_spawns_in_group: Duration::from_millis(500),
+                balls_per_group: 3,
+                duration: Duration::from_secs(40),
+                sides_to_unlock: vec![SideType::BounceBackwards],
+                min_score: 1,
+            },
+            2 => LevelSettings {
+                id: 3,
+                time_between_groups: Duration::from_secs(8),
+                time_between_spawns_in_group: Duration::from_millis(500),
+                balls_per_group: 4,
+                duration: Duration::from_secs(50),
+                sides_to_unlock: vec![],
+                min_score: 1,
+            },
+            3 => LevelSettings {
+                id: 4,
+                time_between_groups: Duration::from_secs(7),
+                time_between_spawns_in_group: Duration::from_millis(500),
+                balls_per_group: 4,
+                duration: Duration::from_secs(60),
+                sides_to_unlock: vec![],
+                min_score: 3,
+            },
+            _ => LevelSettings {
+                id: self.id + 1,
+                time_between_groups: self.time_between_groups,
+                time_between_spawns_in_group: self.time_between_spawns_in_group,
+                balls_per_group: self.balls_per_group + 1,
+                duration: self.duration,
+                min_score: self.min_score + 2,
+                sides_to_unlock: vec![],
+            },
+        }
+    }
+}
+
+#[derive(Resource)]
+struct UnlockedSides(HashSet<SideType>);
+
 #[derive(Component)]
 struct LoadingComponent;
 
@@ -186,8 +271,9 @@ impl SideId {
     }
 }
 
-#[derive(Component, PartialEq, Clone, Copy)]
-enum SideType {
+#[derive(Component, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum SideType {
+    NothingSpecial,
     SpeedUp,
     FreezeOthers,
     BounceBackwards,
@@ -197,11 +283,18 @@ impl SideType {
     /// Adds the effect component that corresponds with this side to the provided entity
     fn add_side_effect(&self, entity: Entity, side_id: SideId, commands: &mut Commands) {
         match self {
-            SideType::SpeedUp => commands.entity(entity).insert(SpeedUpEffect),
-            SideType::FreezeOthers => commands.entity(entity).insert(FreezeOthersEffect),
-            SideType::BounceBackwards => commands
-                .entity(entity)
-                .insert(BounceBackwardsEffect { side_hit: side_id }),
+            SideType::NothingSpecial => (),
+            SideType::SpeedUp => {
+                commands.entity(entity).insert(SpeedUpEffect);
+            }
+            SideType::FreezeOthers => {
+                commands.entity(entity).insert(FreezeOthersEffect);
+            }
+            SideType::BounceBackwards => {
+                commands
+                    .entity(entity)
+                    .insert(BounceBackwardsEffect { side_hit: side_id });
+            }
         };
     }
 }
@@ -262,10 +355,19 @@ impl BallType {
 struct ScoreArea(BallType);
 
 #[derive(Resource)]
-struct Score(i32);
+pub struct Score(pub i32);
+
+#[derive(Resource)]
+struct LevelEndTime(Instant);
+
+#[derive(Component)]
+struct LevelText;
 
 #[derive(Component)]
 struct ScoreText;
+
+#[derive(Component)]
+struct TimeText;
 
 #[derive(Component)]
 struct RotateSensitivityText;
@@ -316,6 +418,7 @@ fn game_setup(
     image_assets: Res<ImageAssets>,
     asset_server: Res<AssetServer>,
     rotate_sensitivity: Res<RotateSensitivity>,
+    level_settings: Res<LevelSettings>,
 ) {
     let side_sprite_original_width = 100.0;
     let side_sprite_original_height = 10.0;
@@ -393,7 +496,7 @@ fn game_setup(
                 });
 
             // side 2
-            spawn_side(parent, SideType::SpeedUp, &image_assets)
+            spawn_side(parent, SideType::NothingSpecial, &image_assets)
                 .insert(SideId(2))
                 .insert(side_collider.clone())
                 .insert(
@@ -574,14 +677,93 @@ fn game_setup(
         //TODO .insert(ScoreArea(BallType::B)) //TODO
         .insert(GameComponent);
 
-    // score display
+    // left sidebar
+    commands
+        .spawn(NodeBundle {
+            style: Style {
+                size: Size::new(Val::Percent(33.3), Val::Percent(100.0)),
+                position_type: PositionType::Absolute,
+                position: UiRect {
+                    left: Val::Px(0.0),
+                    top: Val::Px(0.0),
+                    ..default()
+                },
+                margin: UiRect {
+                    left: Val::Px(5.0),
+                    top: Val::Px(5.0),
+                    ..default()
+                },
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Start,
+                align_items: AlignItems::FlexStart,
+                ..default()
+            },
+            ..default()
+        })
+        .insert(GameComponent)
+        .with_children(|parent| {
+            // level display
+            parent
+                .spawn(
+                    TextBundle::from_section(
+                        format!("Level {}", level_settings.id),
+                        TextStyle {
+                            font: asset_server.load(MAIN_FONT),
+                            font_size: 30.0,
+                            color: Color::Rgba {
+                                red: 0.75,
+                                green: 0.75,
+                                blue: 0.75,
+                                alpha: 1.0,
+                            },
+                        },
+                    )
+                    .with_text_alignment(TextAlignment::Center),
+                )
+                .insert(LevelText);
+
+            // minimum score display
+            parent.spawn(
+                TextBundle::from_section(
+                    format!("Score needed: {}", level_settings.min_score),
+                    TextStyle {
+                        font: asset_server.load(MAIN_FONT),
+                        font_size: 25.0,
+                        color: Color::Rgba {
+                            red: 0.75,
+                            green: 0.75,
+                            blue: 0.75,
+                            alpha: 1.0,
+                        },
+                    },
+                )
+                .with_text_alignment(TextAlignment::Center),
+            );
+
+            // score display
+            parent
+                .spawn(
+                    TextBundle::from_section(
+                        "Score: 0",
+                        TextStyle {
+                            font: asset_server.load(MAIN_FONT),
+                            font_size: 35.0,
+                            color: Color::WHITE,
+                        },
+                    )
+                    .with_text_alignment(TextAlignment::Center),
+                )
+                .insert(ScoreText);
+        });
+
+    // timer display
     commands
         .spawn(
             TextBundle::from_section(
-                "Score: 0",
+                "",
                 TextStyle {
                     font: asset_server.load(MAIN_FONT),
-                    font_size: 30.0,
+                    font_size: 40.0,
                     color: Color::WHITE,
                 },
             )
@@ -589,15 +771,19 @@ fn game_setup(
             .with_style(Style {
                 position_type: PositionType::Absolute,
                 position: UiRect {
-                    left: Val::Px(10.0),
                     top: Val::Px(10.0),
+                    ..default()
+                },
+                margin: UiRect {
+                    left: Val::Auto,
+                    right: Val::Auto,
                     ..default()
                 },
                 ..default()
             }),
         )
         .insert(GameComponent)
-        .insert(ScoreText);
+        .insert(TimeText);
 
     // rotation sensitivity display
     commands
@@ -623,6 +809,9 @@ fn game_setup(
         )
         .insert(GameComponent)
         .insert(RotateSensitivityText);
+
+    commands.insert_resource(Score(0));
+    commands.insert_resource(LevelEndTime(Instant::now() + level_settings.duration));
 }
 
 /// Spawns a side for the player shape
@@ -634,6 +823,12 @@ fn spawn_side<'w, 's, 'a>(
     let mut side = parent.spawn(ActiveEvents::COLLISION_EVENTS);
 
     match side_type {
+        SideType::NothingSpecial => side
+            .insert(SpriteBundle {
+                texture: image_assets.regular_side.clone(),
+                ..default()
+            })
+            .insert(Restitution::coefficient(0.33)),
         SideType::SpeedUp => side
             .insert(SpriteBundle {
                 texture: image_assets.bouncy_side.clone(),
@@ -676,6 +871,7 @@ fn spawn_balls(
     commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
+    level_settings: Res<LevelSettings>,
     mut next_spawn_time: Local<SpawnTime>,
     mut balls_spawned_in_group: Local<u32>,
     audio_assets: Res<AudioAssets>,
@@ -691,11 +887,11 @@ fn spawn_balls(
 
         *balls_spawned_in_group += 1;
 
-        if *balls_spawned_in_group >= BALL_GROUP_SIZE {
+        if *balls_spawned_in_group >= level_settings.balls_per_group {
             *balls_spawned_in_group = 0;
-            next_spawn_time.0 = Instant::now() + TIME_BETWEEN_BALL_GROUP_SPAWNS;
+            next_spawn_time.0 = Instant::now() + level_settings.time_between_groups;
         } else {
-            next_spawn_time.0 = Instant::now() + TIME_BETWEEN_BALL_SPAWNS;
+            next_spawn_time.0 = Instant::now() + level_settings.time_between_spawns_in_group;
         }
     }
 }
@@ -1015,6 +1211,17 @@ fn update_score_display(
     }
 }
 
+/// Keeps the remaining time display up to date
+fn update_time_display(
+    end_time: Res<LevelEndTime>,
+    mut time_text_query: Query<&mut Text, With<TimeText>>,
+) {
+    for mut text in time_text_query.iter_mut() {
+        let time_left = end_time.0 - Instant::now();
+        text.sections[0].value = format!("{}", time_left.as_secs());
+    }
+}
+
 /// Keeps the rotation sensitivity display up to date
 fn update_rotate_sensitivity_display(
     rotate_sensitivity: Res<RotateSensitivity>,
@@ -1027,7 +1234,12 @@ fn update_rotate_sensitivity_display(
     }
 }
 
-//TODO add system to zoom camera based on window size
+/// Ends the level when the timer is up
+fn end_level(mut next_state: ResMut<NextState<GameState>>, end_time: Res<LevelEndTime>) {
+    if Instant::now().duration_since(end_time.0) > Duration::ZERO {
+        next_state.set(GameState::BetweenLevels);
+    }
+}
 
 /// Despawns entities that need to be despawned
 fn despawn_entities(mut commands: Commands, mut entities_to_despawn: ResMut<EntitiesToDespawn>) {

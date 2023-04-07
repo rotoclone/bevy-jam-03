@@ -3,6 +3,7 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     input::common_conditions::input_toggle_active,
     prelude::*,
+    window::{WindowResized, WindowResolution},
 };
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_rapier2d::prelude::*;
@@ -12,6 +13,9 @@ use menu::*;
 
 mod game;
 use game::*;
+
+mod between_levels;
+use between_levels::*;
 
 const DEV_MODE: bool = false;
 
@@ -30,26 +34,31 @@ pub enum GameState {
     Menu,
     GameLoading,
     Game,
-    Win,
-    Lose,
+    BetweenLevels,
 }
+
+#[derive(Component)]
+pub struct MainCamera;
 
 fn main() {
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::BLACK))
         .insert_resource(Msaa::Sample4)
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Side Effects".into(),
-                resolution: (WINDOW_WIDTH, WINDOW_HEIGHT).into(),
-                // Tells wasm to resize the window according to the available canvas
-                fit_canvas_to_parent: true,
-                // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
-                prevent_default_event_handling: false,
+        .add_plugins(
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "Side Effects".into(),
+                    resolution: WindowResolution::new(WINDOW_WIDTH, WINDOW_HEIGHT)
+                        .with_scale_factor_override(1.0),
+                    // Tells wasm to resize the window according to the available canvas
+                    fit_canvas_to_parent: true,
+                    // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
+                    prevent_default_event_handling: false,
+                    ..default()
+                }),
                 ..default()
             }),
-            ..default()
-        }))
+        )
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
         .insert_resource(RapierConfiguration {
             gravity: Vec2::ZERO,
@@ -59,8 +68,8 @@ fn main() {
         .add_startup_system(setup)
         .add_plugin(MenuPlugin)
         .add_plugin(GamePlugin)
-        //TODO .add_plugin(WinPlugin)
-        //TODO .add_plugin(LosePlugin)
+        .add_plugin(BetweenLevelsPlugin)
+        .add_system(zoom_based_on_window_size)
         .add_system(button_color_system);
 
     if DEV_MODE {
@@ -79,17 +88,31 @@ fn main() {
 fn setup(mut commands: Commands) {
     //TODO commands.spawn(Camera2dBundle::default());
 
-    commands.spawn((
-        Camera2dBundle {
-            camera: Camera {
-                hdr: true, // 1. HDR is required for bloom
+    commands
+        .spawn((
+            Camera2dBundle {
+                camera: Camera {
+                    hdr: true, // 1. HDR is required for bloom
+                    ..default()
+                },
+                tonemapping: Tonemapping::TonyMcMapface, // 2. Using a tonemapper that desaturates to white is recommended
                 ..default()
             },
-            tonemapping: Tonemapping::TonyMcMapface, // 2. Using a tonemapper that desaturates to white is recommended
-            ..default()
-        },
-        BloomSettings::default(), // 3. Enable bloom for the camera
-    ));
+            BloomSettings::default(), // 3. Enable bloom for the camera
+        ))
+        .insert(MainCamera);
+}
+
+/// Adjusts the camera zoom when the window is resized
+fn zoom_based_on_window_size(
+    mut camera_query: Query<&mut OrthographicProjection, With<MainCamera>>,
+    mut resize_reader: EventReader<WindowResized>,
+) {
+    let mut projection = camera_query.single_mut();
+
+    for event in resize_reader.iter() {
+        projection.scale = (WINDOW_WIDTH / event.width).max(WINDOW_HEIGHT / event.height);
+    }
 }
 
 type InteractedButtonTuple = (Changed<Interaction>, With<Button>);

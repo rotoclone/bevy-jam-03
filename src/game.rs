@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    ops::Range,
     time::{Duration, Instant},
 };
 
@@ -56,10 +57,6 @@ const PLAYER_COLLISION_GROUP: Group = Group::GROUP_1;
 const BALL_SIZE: f32 = 18.0;
 const BALL_MIN_START_X: f32 = -PLAY_AREA_RADIUS / 2.0;
 const BALL_MAX_START_X: f32 = PLAY_AREA_RADIUS / 2.0;
-const BALL_MIN_START_IMPULSE_Y: f32 = -20.0;
-const BALL_MAX_START_IMPULSE_Y: f32 = -5.0;
-const BALL_MIN_START_IMPULSE_X: f32 = -10.0;
-const BALL_MAX_START_IMPULSE_X: f32 = 10.0;
 const BALL_COLLISION_GROUP: Group = Group::GROUP_2;
 
 const FREEZE_DURATION: Duration = Duration::from_secs(2);
@@ -181,6 +178,10 @@ pub struct LevelSettings {
     time_between_spawns_in_group: Duration,
     /// Number of balls spawned per group
     balls_per_group: u32,
+    /// The range of possible initial impulses in the X direction on spawned balls
+    start_impulse_range_x: Range<f32>,
+    /// The range of possible initial impulses in the Y direction on spawned balls
+    start_impulse_range_y: Range<f32>,
     /// The time limit for the level
     duration: Duration,
     /// The minimum score required to complete the level
@@ -197,6 +198,8 @@ impl LevelSettings {
             time_between_groups: Duration::from_secs(10),
             time_between_spawns_in_group: Duration::from_millis(500),
             balls_per_group: 3,
+            start_impulse_range_x: -10.0..10.0,
+            start_impulse_range_y: -20.0..-5.0,
             duration: Duration::from_secs(30),
             sides_to_unlock: vec![SideType::FreezeOthers],
             min_score: 1,
@@ -211,6 +214,8 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(8),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 3,
+                start_impulse_range_x: -10.0..10.0,
+                start_impulse_range_y: -21.0..-5.0,
                 duration: Duration::from_secs(40),
                 sides_to_unlock: vec![SideType::BounceBackwards],
                 min_score: 1,
@@ -220,6 +225,8 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(8),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 4,
+                start_impulse_range_x: -10.0..10.0,
+                start_impulse_range_y: -23.0..-5.0,
                 duration: Duration::from_secs(50),
                 sides_to_unlock: vec![],
                 min_score: 1,
@@ -229,6 +236,8 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(7),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 4,
+                start_impulse_range_x: -10.0..10.0,
+                start_impulse_range_y: -25.0..-5.0,
                 duration: Duration::from_secs(60),
                 sides_to_unlock: vec![],
                 min_score: 3,
@@ -238,6 +247,9 @@ impl LevelSettings {
                 time_between_groups: self.time_between_groups,
                 time_between_spawns_in_group: self.time_between_spawns_in_group,
                 balls_per_group: self.balls_per_group + 1,
+                start_impulse_range_x: self.start_impulse_range_x.clone(),
+                start_impulse_range_y: (self.start_impulse_range_y.start - 2.0)
+                    ..self.start_impulse_range_y.end,
                 duration: self.duration,
                 min_score: self.min_score + 2,
                 sides_to_unlock: vec![],
@@ -878,7 +890,7 @@ fn spawn_balls(
     audio: Res<Audio>,
 ) {
     if Instant::now().duration_since(next_spawn_time.0) > Duration::ZERO {
-        spawn_random_ball(commands, meshes, materials);
+        spawn_random_ball(commands, meshes, materials, &level_settings);
 
         audio.play_with_settings(
             audio_assets.launch.clone(),
@@ -901,13 +913,14 @@ fn spawn_random_ball(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    level_settings: &Res<LevelSettings>,
 ) {
     let mut rng = rand::thread_rng();
     let ball_type = rng.gen::<BallType>();
     //TODO let ball_type = BallType::A;
     let spawn_point_x = rng.gen_range(BALL_MIN_START_X..=BALL_MAX_START_X);
-    let impulse_x = rng.gen_range(BALL_MIN_START_IMPULSE_X..=BALL_MAX_START_IMPULSE_X);
-    let impulse_y = rng.gen_range(BALL_MIN_START_IMPULSE_Y..=BALL_MAX_START_IMPULSE_Y);
+    let impulse_x = rng.gen_range(level_settings.start_impulse_range_x.clone());
+    let impulse_y = rng.gen_range(level_settings.start_impulse_range_y.clone());
     spawn_ball(
         &mut commands,
         Ball {

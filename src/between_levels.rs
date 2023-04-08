@@ -39,6 +39,9 @@ struct SideSelectionButton {
 struct SideSelectionButtonHighlight(SideSelectionButton);
 
 #[derive(Component)]
+struct SideSelectionButtonText(SideSelectionButton);
+
+#[derive(Component)]
 struct SideDescription(SideId);
 
 /// Unlocks sides based on the completed level
@@ -189,7 +192,7 @@ fn between_levels_setup(
                             TextStyle {
                                 font: asset_server.load(MAIN_FONT),
                                 font_size: 40.0,
-                                color: Color::rgb(0.9, 0.9, 0.9),
+                                color: NORMAL_BUTTON_TEXT_COLOR,
                             },
                         ));
                     });
@@ -260,7 +263,7 @@ fn between_levels_setup(
                             TextStyle {
                                 font: asset_server.load(MAIN_FONT),
                                 font_size: 40.0,
-                                color: Color::rgb(0.9, 0.9, 0.9),
+                                color: NORMAL_BUTTON_TEXT_COLOR,
                             },
                         ));
                     });
@@ -309,74 +312,98 @@ fn spawn_side_customization_ui(
 
             // side type selection buttons
             for side_type in &unlocked_sides.0 {
-                parent
-                    .spawn(ButtonBundle {
-                        style: Style {
-                            size: Size::new(Val::Auto, Val::Auto),
-                            margin: UiRect {
-                                top: Val::Px(10.0),
-                                ..default()
-                            },
-                            padding: UiRect {
-                                left: Val::Px(10.0),
-                                right: Val::Px(10.0),
-                                top: Val::Px(5.0),
-                                bottom: Val::Px(5.0),
-                            },
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
+                let selected = configured_sides.get(&side_id) == *side_type;
+                let enabled = can_side_be_selected(side_type, &side_id, configured_sides);
+
+                let button_color = if enabled {
+                    NORMAL_BUTTON
+                } else {
+                    DISABLED_BUTTON
+                };
+
+                let button_text_color = if enabled {
+                    NORMAL_BUTTON_TEXT_COLOR
+                } else {
+                    DISABLED_BUTTON_TEXT_COLOR
+                };
+
+                let mut button = parent.spawn(ButtonBundle {
+                    style: Style {
+                        size: Size::new(Val::Auto, Val::Px(30.0)),
+                        margin: UiRect {
+                            top: Val::Px(10.0),
                             ..default()
                         },
-                        background_color: NORMAL_BUTTON.into(),
+                        padding: UiRect {
+                            left: Val::Px(10.0),
+                            right: Val::Px(10.0),
+                            top: Val::Px(5.0),
+                            bottom: Val::Px(5.0),
+                        },
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
                         ..default()
-                    })
-                    .insert(SideSelectionButton {
-                        side_id,
-                        side_type: *side_type,
-                    })
-                    .with_children(|parent| {
-                        parent.spawn(TextBundle::from_section(
+                    },
+                    background_color: button_color.into(),
+                    ..default()
+                });
+
+                button.insert(SideSelectionButton {
+                    side_id,
+                    side_type: *side_type,
+                });
+
+                if !enabled {
+                    button.insert(DisabledButton);
+                }
+
+                button.with_children(|parent| {
+                    parent
+                        .spawn(TextBundle::from_section(
                             side_type.name(),
                             TextStyle {
                                 font: asset_server.load(MAIN_FONT),
                                 font_size: 20.0,
-                                color: Color::rgb(0.9, 0.9, 0.9),
+                                color: button_text_color,
                             },
-                        ));
+                        ))
+                        .insert(SideSelectionButtonText(SideSelectionButton {
+                            side_id,
+                            side_type: *side_type,
+                        }));
 
-                        let visibility = if configured_sides.get(&side_id) == *side_type {
-                            Visibility::Inherited
-                        } else {
-                            Visibility::Hidden
-                        };
-                        parent
-                            .spawn(NodeBundle {
-                                background_color: BackgroundColor(Color::Rgba {
-                                    red: 1.0,
-                                    green: 1.0,
-                                    blue: 1.0,
-                                    alpha: 0.1,
-                                }),
-                                style: Style {
-                                    //TODO this is wrong
-                                    position_type: PositionType::Absolute,
-                                    padding: UiRect {
-                                        left: Val::Percent(50.0),
-                                        right: Val::Percent(50.0),
-                                        top: Val::Percent(0.0),
-                                        bottom: Val::Percent(33.33),
-                                    },
-                                    margin: UiRect::all(Val::Percent(100.0)),
-                                    ..default()
+                    let visibility = if selected {
+                        Visibility::Inherited
+                    } else {
+                        Visibility::Hidden
+                    };
+                    parent
+                        .spawn(NodeBundle {
+                            background_color: BackgroundColor(Color::Rgba {
+                                red: 1.0,
+                                green: 1.0,
+                                blue: 1.0,
+                                alpha: 0.1,
+                            }),
+                            style: Style {
+                                position_type: PositionType::Absolute,
+                                padding: UiRect {
+                                    left: Val::Percent(50.0),
+                                    right: Val::Percent(50.0),
+                                    top: Val::Percent(0.0),
+                                    bottom: Val::Px(30.0),
                                 },
-                                visibility,
+                                margin: UiRect::all(Val::Percent(100.0)),
                                 ..default()
-                            })
-                            .insert(SideSelectionButtonHighlight(SideSelectionButton {
-                                side_id,
-                                side_type: *side_type,
-                            }));
-                    });
+                            },
+                            visibility,
+                            ..default()
+                        })
+                        .insert(SideSelectionButtonHighlight(SideSelectionButton {
+                            side_id,
+                            side_type: *side_type,
+                        }));
+                });
             }
 
             // selected side type description
@@ -407,19 +434,54 @@ fn spawn_side_customization_ui(
         });
 }
 
+/// Determines if the provided side type can be chosen for the provided side ID, given the other configured sides.
+fn can_side_be_selected(
+    side_type: &SideType,
+    side_id: &SideId,
+    configured_sides: &ConfiguredSides,
+) -> bool {
+    if !side_type.multiple_allowed() {
+        for i in 0..PLAYER_SHAPE_SIDES {
+            if i == side_id.0 {
+                continue;
+            }
+
+            if configured_sides.get(&SideId(i)) == *side_type {
+                // another side is already configured to use this side type
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+type InteractedSideSelectionButtonTuple = (Changed<Interaction>, Without<DisabledButton>);
+
 /// Handles interactions with the side selection buttons.
 fn side_selection_buttons_system(
-    button_query: Query<(&Interaction, &SideSelectionButton), Changed<Interaction>>,
+    mut commands: Commands,
+    interacted_button_query: Query<
+        (&Interaction, &SideSelectionButton),
+        InteractedSideSelectionButtonTuple,
+    >,
+    mut all_buttons_query: Query<(Entity, &SideSelectionButton, &mut BackgroundColor)>,
+    mut all_button_text_query: Query<(&mut Text, &SideSelectionButtonText)>,
     mut button_highlight_query: Query<(&mut Visibility, &SideSelectionButtonHighlight)>,
-    mut side_description_text_query: Query<(&mut Text, &SideDescription)>,
+    mut side_description_text_query: Query<
+        (&mut Text, &SideDescription),
+        Without<SideSelectionButtonText>,
+    >,
     mut configured_sides: ResMut<ConfiguredSides>,
 ) {
-    for (interaction, button) in button_query.iter() {
+    for (interaction, interacted_button) in interacted_button_query.iter() {
         if *interaction == Interaction::Clicked {
-            configured_sides.0.insert(button.side_id, button.side_type);
+            configured_sides
+                .0
+                .insert(interacted_button.side_id, interacted_button.side_type);
             for (mut visibility, highlight) in button_highlight_query.iter_mut() {
-                if highlight.0.side_id == button.side_id {
-                    if highlight.0.side_type == button.side_type {
+                if highlight.0.side_id == interacted_button.side_id {
+                    if highlight.0.side_type == interacted_button.side_type {
                         *visibility = Visibility::Inherited;
                     } else {
                         *visibility = Visibility::Hidden;
@@ -428,8 +490,30 @@ fn side_selection_buttons_system(
             }
 
             for (mut text, description) in side_description_text_query.iter_mut() {
-                if description.0 == button.side_id {
-                    text.sections[0].value = button.side_type.description().to_string();
+                if description.0 == interacted_button.side_id {
+                    text.sections[0].value = interacted_button.side_type.description().to_string();
+                }
+            }
+
+            for (button_entity, button, mut background_color) in all_buttons_query.iter_mut() {
+                if can_side_be_selected(&button.side_type, &button.side_id, &configured_sides) {
+                    commands.entity(button_entity).remove::<DisabledButton>();
+                    *background_color = NORMAL_BUTTON.into();
+                } else {
+                    commands.entity(button_entity).insert(DisabledButton);
+                    *background_color = DISABLED_BUTTON.into();
+                }
+            }
+
+            for (mut text, button_text) in all_button_text_query.iter_mut() {
+                if can_side_be_selected(
+                    &button_text.0.side_type,
+                    &button_text.0.side_id,
+                    &configured_sides,
+                ) {
+                    text.sections[0].style.color = NORMAL_BUTTON_TEXT_COLOR;
+                } else {
+                    text.sections[0].style.color = DISABLED_BUTTON_TEXT_COLOR;
                 }
             }
         }

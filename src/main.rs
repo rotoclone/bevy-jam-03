@@ -24,7 +24,11 @@ const MAIN_FONT: &str = "fonts/Quicksand-Medium.ttf";
 const WINDOW_WIDTH: f32 = 1280.0;
 const WINDOW_HEIGHT: f32 = 720.0;
 
+const NORMAL_BUTTON_TEXT_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
+const DISABLED_BUTTON_TEXT_COLOR: Color = Color::rgb(0.5, 0.5, 0.5);
+
 const NORMAL_BUTTON: Color = Color::rgb(0.25, 0.25, 0.25);
+const DISABLED_BUTTON: Color = Color::rgb(0.1, 0.1, 0.1);
 const HOVERED_BUTTON: Color = Color::rgb(0.35, 0.35, 0.35);
 const PRESSED_BUTTON: Color = Color::rgb(0.35, 0.75, 0.35);
 
@@ -39,6 +43,9 @@ pub enum GameState {
 
 #[derive(Component)]
 pub struct MainCamera;
+
+#[derive(Component)]
+pub struct DisabledButton;
 
 fn main() {
     let mut app = App::new();
@@ -112,7 +119,7 @@ fn zoom_based_on_window_size(
     }
 }
 
-type InteractedButtonTuple = (Changed<Interaction>, With<Button>);
+type InteractedButtonTuple = (Changed<Interaction>, With<Button>, Without<DisabledButton>);
 
 /// Handles changing button colors when they're interacted with.
 fn button_color_system(

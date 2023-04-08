@@ -353,6 +353,11 @@ impl SideType {
             SideType::BounceBackwards => "Bounces balls backwards out the other side of you",
         }
     }
+
+    /// Determines whether this side type can appear multiple times on the player
+    pub fn multiple_allowed(&self) -> bool {
+        matches!(self, SideType::NothingSpecial)
+    }
 }
 
 #[derive(Component)]

@@ -1,5 +1,7 @@
 use crate::*;
 
+const PLAYER_PREVIEW_TRANSFORM: Transform = Transform::from_translation(Vec3::new(0.0, 0.0, 0.0));
+
 pub struct BetweenLevelsPlugin;
 
 impl Plugin for BetweenLevelsPlugin {
@@ -44,6 +46,9 @@ struct SideSelectionButtonText(SideSelectionButton);
 #[derive(Component)]
 struct SideDescription(SideId);
 
+#[derive(Component)]
+struct PlayerPreview;
+
 /// Unlocks sides based on the completed level
 fn unlock_sides(
     score: Res<Score>,
@@ -60,6 +65,9 @@ fn unlock_sides(
 /// Sets up the between levels screen
 fn between_levels_setup(
     mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    image_assets: Res<ImageAssets>,
     asset_server: Res<AssetServer>,
     score: Res<Score>,
     level_settings: Res<LevelSettings>,
@@ -149,6 +157,18 @@ fn between_levels_setup(
             &configured_sides,
         );
     }
+
+    // player preview
+    spawn_player_shape(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &image_assets,
+        &configured_sides,
+        PLAYER_PREVIEW_TRANSFORM,
+    )
+    .insert(BetweenLevelsComponent)
+    .insert(PlayerPreview);
 
     if score.0 >= level_settings.min_score {
         // next level button
@@ -472,13 +492,20 @@ fn side_selection_buttons_system(
         (&mut Text, &SideDescription),
         Without<SideSelectionButtonText>,
     >,
+    player_preview_query: Query<Entity, With<PlayerPreview>>,
     mut configured_sides: ResMut<ConfiguredSides>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    image_assets: Res<ImageAssets>,
 ) {
+    let mut should_spawn_player_preview = false;
     for (interaction, interacted_button) in interacted_button_query.iter() {
         if *interaction == Interaction::Clicked {
             configured_sides
                 .0
                 .insert(interacted_button.side_id, interacted_button.side_type);
+
+            // update highlighted button
             for (mut visibility, highlight) in button_highlight_query.iter_mut() {
                 if highlight.0.side_id == interacted_button.side_id {
                     if highlight.0.side_type == interacted_button.side_type {
@@ -489,12 +516,14 @@ fn side_selection_buttons_system(
                 }
             }
 
+            // update side description text
             for (mut text, description) in side_description_text_query.iter_mut() {
                 if description.0 == interacted_button.side_id {
                     text.sections[0].value = interacted_button.side_type.description().to_string();
                 }
             }
 
+            // update which buttons are disabled
             for (button_entity, button, mut background_color) in all_buttons_query.iter_mut() {
                 if can_side_be_selected(&button.side_type, &button.side_id, &configured_sides) {
                     commands.entity(button_entity).remove::<DisabledButton>();
@@ -505,6 +534,7 @@ fn side_selection_buttons_system(
                 }
             }
 
+            // update button text colors to match their disabledness
             for (mut text, button_text) in all_button_text_query.iter_mut() {
                 if can_side_be_selected(
                     &button_text.0.side_type,
@@ -516,6 +546,26 @@ fn side_selection_buttons_system(
                     text.sections[0].style.color = DISABLED_BUTTON_TEXT_COLOR;
                 }
             }
+
+            // update player preview
+            for player_preview_entity in player_preview_query.iter() {
+                commands.entity(player_preview_entity).despawn_recursive();
+            }
+
+            should_spawn_player_preview = true;
+        }
+
+        if should_spawn_player_preview {
+            spawn_player_shape(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                &image_assets,
+                &configured_sides,
+                PLAYER_PREVIEW_TRANSFORM,
+            )
+            .insert(BetweenLevelsComponent)
+            .insert(PlayerPreview);
         }
     }
 }

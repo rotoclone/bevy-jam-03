@@ -144,7 +144,7 @@ impl Plugin for GamePlugin {
 }
 
 #[derive(AssetCollection, Resource)]
-struct ImageAssets {
+pub struct ImageAssets {
     #[asset(path = "images/regular_side.png")]
     regular_side: Handle<Image>,
     #[asset(path = "images/bouncy_side.png")]
@@ -482,120 +482,15 @@ fn game_setup(
     level_settings: Res<LevelSettings>,
     configured_sides: Res<ConfiguredSides>,
 ) {
-    let side_sprite_original_width = 100.0;
-    let side_sprite_original_height = 10.0;
-    let side_sprite_custom_width = (PLAYER_SHAPE_RADIUS.powi(2) * 2.0).sqrt();
-    let side_sprite_custom_size = Vec2::new(
-        side_sprite_custom_width,
-        side_sprite_original_height * (side_sprite_custom_width / side_sprite_original_width),
-    );
-    let side_collider = Collider::segment(
-        Vec2::new(-PLAYER_SHAPE_RADIUS / 2.0, 0.0),
-        Vec2::new(PLAYER_SHAPE_RADIUS / 2.0, 0.0),
-    );
-
-    commands
-        .spawn(MaterialMesh2dBundle {
-            mesh: meshes
-                .add(shape::RegularPolygon::new(PLAYER_SHAPE_RADIUS, PLAYER_SHAPE_SIDES).into())
-                .into(),
-            material: materials.add(ColorMaterial::from(Color::Rgba {
-                red: 1.0,
-                green: 1.0,
-                blue: 1.0,
-                alpha: 0.01,
-            })),
-            transform: Transform::from_translation(Vec3::new(0., 0., 0.)),
-            ..default()
-        })
-        .insert(RigidBody::Dynamic)
-        .insert(AdditionalMassProperties::MassProperties(MassProperties {
-            mass: 100.0,
-            principal_inertia: 16000.0,
-            ..default()
-        }))
-        .insert(ExternalForce::default())
-        .insert(ExternalImpulse::default())
-        .insert(Damping {
-            linear_damping: 7.0,
-            angular_damping: 10.0,
-        })
-        .insert(GravityScale(0.0))
-        .insert(GameComponent)
-        .insert(PlayerShape)
-        .with_children(|parent| {
-            // side 0
-            let side_0_type = configured_sides.get(&SideId(0));
-            spawn_side(parent, side_0_type, &image_assets)
-                .insert(SideId(0))
-                .insert(side_collider.clone())
-                .insert(
-                    Transform::from_translation(Vec3::new(
-                        -PLAYER_SHAPE_RADIUS / 2.0,
-                        PLAYER_SHAPE_RADIUS / 2.0,
-                        0.0,
-                    ))
-                    .with_rotation(Quat::from_rotation_z(45.0_f32.to_radians())),
-                )
-                .insert(Sprite {
-                    custom_size: Some(side_sprite_custom_size),
-                    ..default()
-                });
-
-            // side 1
-            let side_1_type = configured_sides.get(&SideId(1));
-            spawn_side(parent, side_1_type, &image_assets)
-                .insert(SideId(1))
-                .insert(side_collider.clone())
-                .insert(
-                    Transform::from_translation(Vec3::new(
-                        PLAYER_SHAPE_RADIUS / 2.0,
-                        PLAYER_SHAPE_RADIUS / 2.0,
-                        0.0,
-                    ))
-                    .with_rotation(Quat::from_rotation_z(-45.0_f32.to_radians())),
-                )
-                .insert(Sprite {
-                    custom_size: Some(side_sprite_custom_size),
-                    ..default()
-                });
-
-            // side 2
-            let side_2_type = configured_sides.get(&SideId(2));
-            spawn_side(parent, side_2_type, &image_assets)
-                .insert(SideId(2))
-                .insert(side_collider.clone())
-                .insert(
-                    Transform::from_translation(Vec3::new(
-                        PLAYER_SHAPE_RADIUS / 2.0,
-                        -PLAYER_SHAPE_RADIUS / 2.0,
-                        0.0,
-                    ))
-                    .with_rotation(Quat::from_rotation_z(-135.0_f32.to_radians())),
-                )
-                .insert(Sprite {
-                    custom_size: Some(side_sprite_custom_size),
-                    ..default()
-                });
-
-            // side 3
-            let side_3_type = configured_sides.get(&SideId(3));
-            spawn_side(parent, side_3_type, &image_assets)
-                .insert(SideId(3))
-                .insert(side_collider.clone())
-                .insert(
-                    Transform::from_translation(Vec3::new(
-                        -PLAYER_SHAPE_RADIUS / 2.0,
-                        -PLAYER_SHAPE_RADIUS / 2.0,
-                        0.0,
-                    ))
-                    .with_rotation(Quat::from_rotation_z(135.0_f32.to_radians())),
-                )
-                .insert(Sprite {
-                    custom_size: Some(side_sprite_custom_size),
-                    ..default()
-                });
-        });
+    spawn_player_shape(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &image_assets,
+        &configured_sides,
+        Transform::from_translation(Vec3::new(0., 0., 0.)),
+    )
+    .insert(GameComponent);
 
     // score areas
     let mut score_area_a_color = BallType::A.color();
@@ -710,7 +605,6 @@ fn game_setup(
         })
         .insert(Collider::cuboid(PLAY_AREA_RADIUS, PLAY_AREA_RADIUS))
         .insert(Restitution::coefficient(1.0))
-        //TODO .insert(ScoreArea(BallType::A)) //TODO
         .insert(GameComponent);
 
     // right wall
@@ -741,7 +635,6 @@ fn game_setup(
         })
         .insert(Collider::cuboid(PLAY_AREA_RADIUS, PLAY_AREA_RADIUS))
         .insert(Restitution::coefficient(1.0))
-        //TODO .insert(ScoreArea(BallType::B)) //TODO
         .insert(GameComponent);
 
     // left sidebar
@@ -881,11 +774,138 @@ fn game_setup(
     commands.insert_resource(LevelEndTime(Instant::now() + level_settings.duration));
 }
 
+/// Spawns the player at the provided location
+pub fn spawn_player_shape<'w, 's, 'a>(
+    commands: &'a mut Commands<'w, 's>,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+    image_assets: &ImageAssets,
+    configured_sides: &ConfiguredSides,
+    transform: Transform,
+) -> EntityCommands<'w, 's, 'a> {
+    let side_sprite_original_width = 100.0;
+    let side_sprite_original_height = 10.0;
+    let side_sprite_custom_width = (PLAYER_SHAPE_RADIUS.powi(2) * 2.0).sqrt();
+    let side_sprite_custom_size = Vec2::new(
+        side_sprite_custom_width,
+        side_sprite_original_height * (side_sprite_custom_width / side_sprite_original_width),
+    );
+    let side_collider = Collider::segment(
+        Vec2::new(-PLAYER_SHAPE_RADIUS / 2.0, 0.0),
+        Vec2::new(PLAYER_SHAPE_RADIUS / 2.0, 0.0),
+    );
+
+    let mut player_shape = commands.spawn(MaterialMesh2dBundle {
+        mesh: meshes
+            .add(shape::RegularPolygon::new(PLAYER_SHAPE_RADIUS, PLAYER_SHAPE_SIDES).into())
+            .into(),
+        material: materials.add(ColorMaterial::from(Color::Rgba {
+            red: 1.0,
+            green: 1.0,
+            blue: 1.0,
+            alpha: 0.01,
+        })),
+        transform,
+        ..default()
+    });
+
+    player_shape
+        .insert(RigidBody::Dynamic)
+        .insert(AdditionalMassProperties::MassProperties(MassProperties {
+            mass: 100.0,
+            principal_inertia: 16000.0,
+            ..default()
+        }))
+        .insert(ExternalForce::default())
+        .insert(ExternalImpulse::default())
+        .insert(Damping {
+            linear_damping: 7.0,
+            angular_damping: 10.0,
+        })
+        .insert(GravityScale(0.0))
+        .insert(PlayerShape)
+        .with_children(|parent| {
+            // side 0
+            let side_0_type = configured_sides.get(&SideId(0));
+            spawn_side(parent, side_0_type, image_assets)
+                .insert(SideId(0))
+                .insert(side_collider.clone())
+                .insert(
+                    Transform::from_translation(Vec3::new(
+                        -PLAYER_SHAPE_RADIUS / 2.0,
+                        PLAYER_SHAPE_RADIUS / 2.0,
+                        0.0,
+                    ))
+                    .with_rotation(Quat::from_rotation_z(45.0_f32.to_radians())),
+                )
+                .insert(Sprite {
+                    custom_size: Some(side_sprite_custom_size),
+                    ..default()
+                });
+
+            // side 1
+            let side_1_type = configured_sides.get(&SideId(1));
+            spawn_side(parent, side_1_type, image_assets)
+                .insert(SideId(1))
+                .insert(side_collider.clone())
+                .insert(
+                    Transform::from_translation(Vec3::new(
+                        PLAYER_SHAPE_RADIUS / 2.0,
+                        PLAYER_SHAPE_RADIUS / 2.0,
+                        0.0,
+                    ))
+                    .with_rotation(Quat::from_rotation_z(-45.0_f32.to_radians())),
+                )
+                .insert(Sprite {
+                    custom_size: Some(side_sprite_custom_size),
+                    ..default()
+                });
+
+            // side 2
+            let side_2_type = configured_sides.get(&SideId(2));
+            spawn_side(parent, side_2_type, image_assets)
+                .insert(SideId(2))
+                .insert(side_collider.clone())
+                .insert(
+                    Transform::from_translation(Vec3::new(
+                        PLAYER_SHAPE_RADIUS / 2.0,
+                        -PLAYER_SHAPE_RADIUS / 2.0,
+                        0.0,
+                    ))
+                    .with_rotation(Quat::from_rotation_z(-135.0_f32.to_radians())),
+                )
+                .insert(Sprite {
+                    custom_size: Some(side_sprite_custom_size),
+                    ..default()
+                });
+
+            // side 3
+            let side_3_type = configured_sides.get(&SideId(3));
+            spawn_side(parent, side_3_type, image_assets)
+                .insert(SideId(3))
+                .insert(side_collider.clone())
+                .insert(
+                    Transform::from_translation(Vec3::new(
+                        -PLAYER_SHAPE_RADIUS / 2.0,
+                        -PLAYER_SHAPE_RADIUS / 2.0,
+                        0.0,
+                    ))
+                    .with_rotation(Quat::from_rotation_z(135.0_f32.to_radians())),
+                )
+                .insert(Sprite {
+                    custom_size: Some(side_sprite_custom_size),
+                    ..default()
+                });
+        });
+
+    player_shape
+}
+
 /// Spawns a side for the player shape
 fn spawn_side<'w, 's, 'a>(
     parent: &'a mut ChildBuilder<'w, 's, '_>,
     side_type: SideType,
-    image_assets: &Res<ImageAssets>,
+    image_assets: &ImageAssets,
 ) -> EntityCommands<'w, 's, 'a> {
     let mut side = parent.spawn(ActiveEvents::COLLISION_EVENTS);
 
@@ -972,7 +992,7 @@ fn spawn_random_ball(
 ) {
     let mut rng = rand::thread_rng();
     let ball_type = rng.gen::<BallType>();
-    //TODO let ball_type = BallType::A;
+    // TODO add more spawn points
     let spawn_point_x = rng.gen_range(BALL_MIN_START_X..=BALL_MAX_START_X);
     let impulse_x = rng.gen_range(level_settings.start_impulse_range_x.clone());
     let impulse_y = rng.gen_range(level_settings.start_impulse_range_y.clone());

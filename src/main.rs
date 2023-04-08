@@ -17,7 +17,7 @@ use game::*;
 mod between_levels;
 use between_levels::*;
 
-const DEV_MODE: bool = false;
+const DEV_MODE: bool = true;
 
 const MAIN_FONT: &str = "fonts/Quicksand-Medium.ttf";
 
@@ -44,21 +44,18 @@ fn main() {
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::BLACK))
         .insert_resource(Msaa::Sample4)
-        .add_plugins(
-            DefaultPlugins.set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: "Side Effects".into(),
-                    resolution: WindowResolution::new(WINDOW_WIDTH, WINDOW_HEIGHT)
-                        .with_scale_factor_override(1.0),
-                    // Tells wasm to resize the window according to the available canvas
-                    fit_canvas_to_parent: true,
-                    // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
-                    prevent_default_event_handling: false,
-                    ..default()
-                }),
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Side Effects".into(),
+                resolution: WindowResolution::new(WINDOW_WIDTH, WINDOW_HEIGHT),
+                // Tells wasm to resize the window according to the available canvas
+                fit_canvas_to_parent: true,
+                // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
+                prevent_default_event_handling: false,
                 ..default()
             }),
-        )
+            ..default()
+        }))
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
         .insert_resource(RapierConfiguration {
             gravity: Vec2::ZERO,

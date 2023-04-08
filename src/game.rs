@@ -29,8 +29,8 @@ const DECREASE_ROTATE_SENSITIVITY_KEY: KeyCode = KeyCode::Comma;
 
 const ROTATE_SENSITIVITY_ADJUST_AMOUNT: f32 = 0.2;
 
-const MOVE_SPEED: f32 = 1000.0;
-const ROTATE_SPEED: f32 = 0.5;
+const MOVE_SPEED: f32 = 150000.0;
+const ROTATE_SPEED: f32 = 65.0;
 const SCROLL_ROTATE_SPEED: f32 = 3.0;
 
 const MASTER_VOLUME: f32 = 0.5;
@@ -50,7 +50,7 @@ const PLAY_AREA_RADIUS: f32 = WINDOW_HEIGHT / 2.0;
 
 const SCORE_AREA_SIZE: f32 = 150.0;
 
-const PLAYER_SHAPE_SIDES: usize = 4;
+pub const PLAYER_SHAPE_SIDES: usize = 4;
 const PLAYER_SHAPE_RADIUS: f32 = 60.0;
 const PLAYER_COLLISION_GROUP: Group = Group::GROUP_1;
 
@@ -86,6 +86,15 @@ impl Plugin for GamePlugin {
 
         app.insert_resource(UnlockedSides(
             [SideType::NothingSpecial, SideType::SpeedUp].into(),
+        ))
+        .insert_resource(ConfiguredSides(
+            [
+                (SideId(0), SideType::SpeedUp),
+                (SideId(1), SideType::NothingSpecial),
+                (SideId(2), SideType::NothingSpecial),
+                (SideId(3), SideType::NothingSpecial),
+            ]
+            .into(),
         ))
         .insert_resource(LevelSettings::first_level())
         .insert_resource(EntitiesToDespawn(Vec::new()))
@@ -259,7 +268,10 @@ impl LevelSettings {
 }
 
 #[derive(Resource)]
-struct UnlockedSides(HashSet<SideType>);
+pub struct UnlockedSides(pub HashSet<SideType>);
+
+#[derive(Resource)]
+pub struct ConfiguredSides(pub HashMap<SideId, SideType>);
 
 #[derive(Component)]
 struct LoadingComponent;
@@ -274,7 +286,7 @@ struct GameComponent;
 struct PlayerShape;
 
 #[derive(Component, Eq, PartialEq, Hash, Clone, Copy)]
-struct SideId(usize);
+pub struct SideId(pub usize);
 
 impl SideId {
     /// Finds the ID of the opposite side
@@ -308,6 +320,28 @@ impl SideType {
                     .insert(BounceBackwardsEffect { side_hit: side_id });
             }
         };
+    }
+
+    /// Gets the name of this side
+    pub fn name(&self) -> &str {
+        match self {
+            SideType::NothingSpecial => "Regular",
+            SideType::SpeedUp => "Bouncy",
+            SideType::FreezeOthers => "Freeze",
+            SideType::BounceBackwards => "Bounce Backwards",
+        }
+    }
+
+    /// Gets the description of this side
+    pub fn description(&self) -> &str {
+        match self {
+            SideType::NothingSpecial => "Nothing special",
+            SideType::SpeedUp => "Bounces balls real fast",
+            SideType::FreezeOthers => {
+                "Temporarily freezes all balls other than the one that hit it"
+            }
+            SideType::BounceBackwards => "Bounces balls backwards out the other side of you",
+        }
     }
 }
 
@@ -464,9 +498,10 @@ fn game_setup(
             principal_inertia: 16000.0,
             ..default()
         }))
+        .insert(ExternalForce::default())
         .insert(ExternalImpulse::default())
         .insert(Damping {
-            linear_damping: 4.0,
+            linear_damping: 7.0,
             angular_damping: 10.0,
         })
         .insert(GravityScale(0.0))
@@ -976,36 +1011,36 @@ fn spawn_ball<'w, 's, 'a>(
 
 /// Applies impulses to the player based on pressed keys
 fn player_movement(
-    mut player_shape_query: Query<&mut ExternalImpulse, With<PlayerShape>>,
+    mut player_shape_query: Query<(&mut ExternalForce, &mut ExternalImpulse), With<PlayerShape>>,
     keycode: Res<Input<KeyCode>>,
     mut scroll_events: EventReader<MouseWheel>,
     rotate_sensitivity: Res<RotateSensitivity>,
 ) {
-    for mut impulse in &mut player_shape_query {
+    for (mut force, mut impulse) in &mut player_shape_query {
         // translation
         if keycode.pressed(MOVE_LEFT_KEY) {
-            impulse.impulse.x = -MOVE_SPEED;
-        }
-
-        if keycode.pressed(MOVE_RIGHT_KEY) {
-            impulse.impulse.x = MOVE_SPEED;
+            force.force.x = -MOVE_SPEED;
+        } else if keycode.pressed(MOVE_RIGHT_KEY) {
+            force.force.x = MOVE_SPEED;
+        } else {
+            force.force.x = 0.0;
         }
 
         if keycode.pressed(MOVE_UP_KEY) {
-            impulse.impulse.y = MOVE_SPEED;
-        }
-
-        if keycode.pressed(MOVE_DOWN_KEY) {
-            impulse.impulse.y = -MOVE_SPEED;
+            force.force.y = MOVE_SPEED;
+        } else if keycode.pressed(MOVE_DOWN_KEY) {
+            force.force.y = -MOVE_SPEED;
+        } else {
+            force.force.y = 0.0;
         }
 
         // rotation
         if keycode.pressed(ROTATE_CLOCKWISE_KEY) {
-            impulse.torque_impulse = -ROTATE_SPEED * rotate_sensitivity.0;
-        }
-
-        if keycode.pressed(ROTATE_COUNTERCLOCKWISE_KEY) {
-            impulse.torque_impulse = ROTATE_SPEED * rotate_sensitivity.0;
+            force.torque = -ROTATE_SPEED * rotate_sensitivity.0;
+        } else if keycode.pressed(ROTATE_COUNTERCLOCKWISE_KEY) {
+            force.torque = ROTATE_SPEED * rotate_sensitivity.0;
+        } else {
+            force.torque = 0.0;
         }
 
         for event in scroll_events.iter() {
@@ -1209,7 +1244,8 @@ fn unfreeze_entity(entity: Entity, commands: &mut Commands) {
         .insert(RigidBody::Dynamic)
         .insert(Sleeping {
             sleeping: false,
-            ..default()
+            linear_threshold: -1.0,
+            angular_threshold: -1.0,
         })
         .remove::<Frozen>();
 }

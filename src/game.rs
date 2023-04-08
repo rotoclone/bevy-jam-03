@@ -273,6 +273,16 @@ pub struct UnlockedSides(pub HashSet<SideType>);
 #[derive(Resource)]
 pub struct ConfiguredSides(pub HashMap<SideId, SideType>);
 
+impl ConfiguredSides {
+    /// Gets the type of the side with the provided ID. Panics if the side is not configured.
+    pub fn get(&self, side_id: &SideId) -> SideType {
+        *self
+            .0
+            .get(side_id)
+            .unwrap_or_else(|| panic!("side {side_id:?} should be configured"))
+    }
+}
+
 #[derive(Component)]
 struct LoadingComponent;
 
@@ -285,7 +295,7 @@ struct GameComponent;
 #[derive(Component)]
 struct PlayerShape;
 
-#[derive(Component, Eq, PartialEq, Hash, Clone, Copy)]
+#[derive(Component, Eq, PartialEq, Hash, Clone, Copy, Debug)]
 pub struct SideId(pub usize);
 
 impl SideId {
@@ -465,6 +475,7 @@ fn game_setup(
     asset_server: Res<AssetServer>,
     rotate_sensitivity: Res<RotateSensitivity>,
     level_settings: Res<LevelSettings>,
+    configured_sides: Res<ConfiguredSides>,
 ) {
     let side_sprite_original_width = 100.0;
     let side_sprite_original_height = 10.0;
@@ -509,7 +520,8 @@ fn game_setup(
         .insert(PlayerShape)
         .with_children(|parent| {
             // side 0
-            spawn_side(parent, SideType::SpeedUp, &image_assets)
+            let side_0_type = configured_sides.get(&SideId(0));
+            spawn_side(parent, side_0_type, &image_assets)
                 .insert(SideId(0))
                 .insert(side_collider.clone())
                 .insert(
@@ -526,7 +538,8 @@ fn game_setup(
                 });
 
             // side 1
-            spawn_side(parent, SideType::BounceBackwards, &image_assets)
+            let side_1_type = configured_sides.get(&SideId(1));
+            spawn_side(parent, side_1_type, &image_assets)
                 .insert(SideId(1))
                 .insert(side_collider.clone())
                 .insert(
@@ -543,7 +556,8 @@ fn game_setup(
                 });
 
             // side 2
-            spawn_side(parent, SideType::NothingSpecial, &image_assets)
+            let side_2_type = configured_sides.get(&SideId(2));
+            spawn_side(parent, side_2_type, &image_assets)
                 .insert(SideId(2))
                 .insert(side_collider.clone())
                 .insert(
@@ -560,7 +574,8 @@ fn game_setup(
                 });
 
             // side 3
-            spawn_side(parent, SideType::FreezeOthers, &image_assets)
+            let side_3_type = configured_sides.get(&SideId(3));
+            spawn_side(parent, side_3_type, &image_assets)
                 .insert(SideId(3))
                 .insert(side_collider.clone())
                 .insert(

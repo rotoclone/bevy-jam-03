@@ -344,12 +344,7 @@ fn spawn_side_customization_ui(
                             },
                         ));
 
-                        let visibility = if configured_sides
-                            .0
-                            .get(&side_id)
-                            .expect("side should be configured")
-                            == side_type
-                        {
+                        let visibility = if configured_sides.get(&side_id) == *side_type {
                             Visibility::Inherited
                         } else {
                             Visibility::Hidden
@@ -388,11 +383,7 @@ fn spawn_side_customization_ui(
             parent
                 .spawn(
                     TextBundle::from_section(
-                        configured_sides
-                            .0
-                            .get(&side_id)
-                            .expect("side should be configured")
-                            .description(),
+                        configured_sides.get(&side_id).description(),
                         TextStyle {
                             font: asset_server.load(MAIN_FONT),
                             font_size: 25.0,

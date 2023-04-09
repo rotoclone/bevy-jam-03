@@ -7,7 +7,7 @@ use std::{
 use bevy::{
     ecs::{query::ReadOnlyWorldQuery, system::EntityCommands},
     input::mouse::MouseWheel,
-    sprite::MaterialMesh2dBundle,
+    sprite::{MaterialMesh2dBundle, Mesh2dHandle},
 };
 use bevy_asset_loader::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -33,7 +33,7 @@ const MOVE_SPEED: f32 = 150000.0;
 const ROTATE_SPEED: f32 = 65.0;
 const SCROLL_ROTATE_SPEED: f32 = 3.0;
 
-pub const MASTER_VOLUME: f32 = 0.5;
+pub const MASTER_VOLUME: f32 = 0.0; //TODO 0.5
 const HIT_SOUND_VOLUME: f32 = 0.4;
 const SPAWN_SOUND_VOLUME: f32 = 0.4;
 const GOOD_SCORE_VOLUME: f32 = 0.33;
@@ -60,9 +60,11 @@ const BALL_MIN_START_X: f32 = -PLAY_AREA_RADIUS / 2.0;
 const BALL_MAX_START_X: f32 = PLAY_AREA_RADIUS / 2.0;
 const BALL_COLLISION_GROUP: Group = Group::GROUP_2;
 
-const FREEZE_DURATION: Duration = Duration::from_secs(2);
+const FREEZE_DURATION: Duration = Duration::from_secs(3);
 const BOUNCE_BACKWARDS_VELOCITY: f32 = 100.0;
 const BOUNCE_BACKWARDS_DISTANCE: f32 = BALL_SIZE + 1.0;
+const RESIZE_DURATION: Duration = Duration::from_secs(5);
+const RESIZE_AMOUNT: f32 = 40.0;
 
 const TIMER_FONT_SIZE: f32 = 40.0;
 
@@ -96,7 +98,7 @@ impl Plugin for GamePlugin {
         .insert_resource(ConfiguredSides(
             [
                 (SideId(0), SideType::SpeedUp),
-                (SideId(1), SideType::NothingSpecial),
+                (SideId(1), SideType::ResizeScoreAreas), //TODO
                 (SideId(2), SideType::NothingSpecial),
                 (SideId(3), SideType::NothingSpecial),
             ]
@@ -160,6 +162,7 @@ impl Plugin for GamePlugin {
                 .run_if(in_state(GameState::Game)),
         )
         .add_system(unfreeze_entities.run_if(in_state(GameState::Game)))
+        .add_system(unresize_entities.run_if(in_state(GameState::Game)))
         .add_system(
             end_level
                 .after(collisions)
@@ -474,6 +477,13 @@ struct ExtremeBounceEffect;
 struct Frozen {
     unfreeze_at: Instant,
     original_velocity: Velocity,
+}
+
+#[derive(Component)]
+struct Resized {
+    unresize_at: Instant,
+    original_mesh: Mesh2dHandle,
+    original_collider: Collider,
 }
 
 #[derive(Component)]
@@ -1449,15 +1459,40 @@ fn handle_duplicate_effect(
 /// Deals with entities that have had the resize score areas effect added
 fn handle_resize_score_areas_effect(
     mut commands: Commands,
-    query: Query<Entity, Added<ResizeScoreAreasEffect>>,
+    query: Query<(Entity, &Ball), Added<ResizeScoreAreasEffect>>,
+    mut score_areas_query: Query<(Entity, &ScoreArea, &mut Mesh2dHandle, &mut Collider)>,
+    mut meshes: ResMut<Assets<Mesh>>,
     audio: Res<Audio>,
     audio_assets: Res<AudioAssets>,
 ) {
-    for entity in query.iter() {
-        //TODO resize score areas
+    for (ball_entity, ball) in query.iter() {
+        for (score_area_entity, score_area, mut mesh, mut collider) in score_areas_query.iter_mut()
+        {
+            commands.entity(score_area_entity).insert(Resized {
+                unresize_at: Instant::now() + RESIZE_DURATION,
+                original_mesh: meshes
+                    .add(shape::Circle::new(SCORE_AREA_SIZE).into())
+                    .into(),
+                original_collider: Collider::ball(SCORE_AREA_SIZE),
+            });
+
+            if ball.ball_type == score_area.0 {
+                *mesh = meshes
+                    .add(shape::Circle::new(SCORE_AREA_SIZE + RESIZE_AMOUNT).into())
+                    .into();
+                *collider = Collider::ball(SCORE_AREA_SIZE + RESIZE_AMOUNT);
+            } else {
+                *mesh = meshes
+                    .add(shape::Circle::new(SCORE_AREA_SIZE - RESIZE_AMOUNT).into())
+                    .into();
+                *collider = Collider::ball(SCORE_AREA_SIZE - RESIZE_AMOUNT);
+            }
+        }
 
         //TODO sound effect
-        commands.entity(entity).remove::<ResizeScoreAreasEffect>();
+        commands
+            .entity(ball_entity)
+            .remove::<ResizeScoreAreasEffect>();
     }
 }
 
@@ -1502,6 +1537,20 @@ fn unfreeze_entity(entity: Entity, commands: &mut Commands) {
             angular_threshold: -1.0,
         })
         .remove::<Frozen>();
+}
+
+/// Handles un-resizing entities
+fn unresize_entities(
+    mut commands: Commands,
+    mut resized_query: Query<(Entity, &Resized, &mut Mesh2dHandle, &mut Collider)>,
+) {
+    for (entity, resized, mut mesh, mut collider) in resized_query.iter_mut() {
+        if Instant::now().duration_since(resized.unresize_at) > Duration::ZERO {
+            *mesh = resized.original_mesh.clone();
+            *collider = resized.original_collider.clone();
+            commands.entity(entity).remove::<Resized>();
+        }
+    }
 }
 
 /// Keeps the score display up to date

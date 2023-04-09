@@ -11,6 +11,7 @@ use bevy::{
 };
 use bevy_asset_loader::prelude::*;
 use bevy_rapier2d::prelude::*;
+use bevy_tweening::Lerp;
 use iyes_progress::{ProgressCounter, ProgressPlugin};
 use rand::{distributions::Standard, prelude::Distribution, Rng};
 
@@ -69,6 +70,8 @@ const SCORE_AREA_RESIZE_AMOUNT: f32 = 40.0;
 const DUPLICATE_COOLDOWN_DURATION: Duration = Duration::from_millis(1000);
 
 const TIMER_FONT_SIZE: f32 = 40.0;
+
+const SCORE_AREA_HIT_ANIMATION_DURATION: Duration = Duration::from_millis(250);
 
 pub struct GamePlugin;
 
@@ -177,6 +180,11 @@ impl Plugin for GamePlugin {
         .add_system(unresize_entities.run_if(in_state(GameState::Game)))
         .add_system(
             end_level
+                .after(collisions)
+                .run_if(in_state(GameState::Game)),
+        )
+        .add_system(
+            animate_score_area_hit
                 .after(collisions)
                 .run_if(in_state(GameState::Game)),
         )
@@ -374,6 +382,12 @@ impl ConfiguredSides {
 #[derive(Resource)]
 struct GameMusicController(Handle<AudioSink>);
 
+#[derive(Resource)]
+pub struct Score(pub i32);
+
+#[derive(Resource)]
+struct LevelEndTime(Instant);
+
 #[derive(Component)]
 struct LoadingComponent;
 
@@ -563,11 +577,11 @@ impl BallType {
 #[derive(Component)]
 struct ScoreArea(BallType);
 
-#[derive(Resource)]
-pub struct Score(pub i32);
-
-#[derive(Resource)]
-struct LevelEndTime(Instant);
+#[derive(Component)]
+struct AnimateScoreAreaHit {
+    score_change: i32,
+    hit_time: Instant,
+}
 
 #[derive(Component)]
 struct LevelText;
@@ -641,14 +655,14 @@ fn game_setup(
     .insert(GameComponent);
 
     // score areas
-    let mut score_area_a_color = BallType::A.color();
-    score_area_a_color.set_a(0.1);
     commands
         .spawn(MaterialMesh2dBundle {
             mesh: meshes
                 .add(shape::Circle::new(SCORE_AREA_SIZE).into())
                 .into(),
-            material: materials.add(ColorMaterial::from(score_area_a_color)),
+            material: materials.add(ColorMaterial::from(color_for_score_area(&ScoreArea(
+                BallType::A,
+            )))),
             ..default()
         })
         .insert(Collider::ball(SCORE_AREA_SIZE))
@@ -661,14 +675,14 @@ fn game_setup(
         .insert(GameComponent)
         .insert(ScoreArea(BallType::A));
 
-    let mut score_area_b_color = BallType::B.color();
-    score_area_b_color.set_a(0.1);
     commands
         .spawn(MaterialMesh2dBundle {
             mesh: meshes
                 .add(shape::Circle::new(SCORE_AREA_SIZE).into())
                 .into(),
-            material: materials.add(ColorMaterial::from(score_area_b_color)),
+            material: materials.add(ColorMaterial::from(color_for_score_area(&ScoreArea(
+                BallType::B,
+            )))),
             ..default()
         })
         .insert(Collider::ball(SCORE_AREA_SIZE))
@@ -681,14 +695,14 @@ fn game_setup(
         .insert(GameComponent)
         .insert(ScoreArea(BallType::B));
 
-    let mut score_area_c_color = BallType::C.color();
-    score_area_c_color.set_a(0.1);
     commands
         .spawn(MaterialMesh2dBundle {
             mesh: meshes
                 .add(shape::Circle::new(SCORE_AREA_SIZE).into())
                 .into(),
-            material: materials.add(ColorMaterial::from(score_area_c_color)),
+            material: materials.add(ColorMaterial::from(color_for_score_area(&ScoreArea(
+                BallType::C,
+            )))),
             ..default()
         })
         .insert(Collider::ball(SCORE_AREA_SIZE))
@@ -920,6 +934,14 @@ fn game_setup(
 
     commands.insert_resource(Score(0));
     commands.insert_resource(LevelEndTime(Instant::now() + level_settings.duration));
+}
+
+/// Determines what color the provided score area should be
+fn color_for_score_area(score_area: &ScoreArea) -> Color {
+    let mut color = score_area.0.color();
+    color.set_a(0.1);
+
+    color
 }
 
 /// Spawns the player at the provided location
@@ -1332,18 +1354,30 @@ fn collisions(
                     continue;
                 }
                 unfreeze_entity(ball_entity, &mut commands);
-                if let Some((score_area, _)) =
+                if let Some((score_area, score_area_entity)) =
                     get_from_either::<ScoreArea, &ScoreArea>(*a, *b, &score_areas_query)
                 {
                     // a ball has hit a score area
                     if ball.ball_type == score_area.0 {
                         score.0 += i32::from(ball.points);
+                        commands
+                            .entity(score_area_entity)
+                            .insert(AnimateScoreAreaHit {
+                                score_change: i32::from(ball.points),
+                                hit_time: Instant::now(),
+                            });
                         audio.play_with_settings(
                             audio_assets.good.clone(),
                             PlaybackSettings::ONCE.with_volume(GOOD_SCORE_VOLUME * MASTER_VOLUME),
                         );
                     } else {
                         score.0 -= i32::from(ball.points);
+                        commands
+                            .entity(score_area_entity)
+                            .insert(AnimateScoreAreaHit {
+                                score_change: -i32::from(ball.points),
+                                hit_time: Instant::now(),
+                            });
                         audio.play_with_settings(
                             audio_assets.bad.clone(),
                             PlaybackSettings::ONCE.with_volume(BAD_SCORE_VOLUME * MASTER_VOLUME),
@@ -1605,17 +1639,13 @@ fn handle_extreme_bounce_effect(
 
 /// Deals with entities that have had the resize score areas effect added
 fn handle_extra_points_effect(
-    mut commands: Commands,
-    mut query: Query<
-        (Entity, &mut Ball, &mut Mesh2dHandle, &mut Collider),
-        Added<ExtraPointsEffect>,
-    >,
+    mut query: Query<(&mut Ball, &mut Mesh2dHandle, &mut Collider), Added<ExtraPointsEffect>>,
     mut meshes: ResMut<Assets<Mesh>>,
     audio: Res<Audio>,
     audio_assets: Res<AudioAssets>,
 ) {
-    for (ball_entity, mut ball, mut mesh, mut collider) in query.iter_mut() {
-        ball.points += 1;
+    for (mut ball, mut mesh, mut collider) in query.iter_mut() {
+        ball.points = 2;
         *mesh = meshes
             .add(shape::Circle::new(EXTRA_POINT_BALL_SIZE).into())
             .into();
@@ -1661,6 +1691,47 @@ fn unresize_entities(
             *mesh = resized.original_mesh.clone();
             *collider = resized.original_collider.clone();
             commands.entity(entity).remove::<Resized>();
+        }
+    }
+}
+
+/// Handles animating hit score areas
+fn animate_score_area_hit(
+    mut commands: Commands,
+    query: Query<(
+        Entity,
+        &ScoreArea,
+        &AnimateScoreAreaHit,
+        &Handle<ColorMaterial>,
+    )>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    for (entity, score_area, animation, material_handle) in query.iter() {
+        let material = materials
+            .get_mut(material_handle)
+            .expect("material should exist");
+        let base_color = color_for_score_area(score_area);
+        let start_animation_channel = if animation.score_change > 0 { 1.0 } else { 0.1 };
+        let start_animation_alpha_channel = if animation.score_change.abs() == 1 {
+            0.5
+        } else {
+            1.0
+        };
+
+        let animation_progress: f32 = Instant::now()
+            .duration_since(animation.hit_time)
+            .as_secs_f32()
+            / SCORE_AREA_HIT_ANIMATION_DURATION.as_secs_f32();
+        if animation_progress >= 1.0 || animation.score_change == 0 {
+            material.color = base_color;
+            commands.entity(entity).remove::<AnimateScoreAreaHit>();
+        } else {
+            material.color = Color::Rgba {
+                red: start_animation_channel.lerp(&base_color.r(), &animation_progress),
+                green: start_animation_channel.lerp(&base_color.g(), &animation_progress),
+                blue: start_animation_channel.lerp(&base_color.b(), &animation_progress),
+                alpha: start_animation_alpha_channel.lerp(&base_color.a(), &animation_progress),
+            };
         }
     }
 }

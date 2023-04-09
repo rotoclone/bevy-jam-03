@@ -33,7 +33,7 @@ const MOVE_SPEED: f32 = 150000.0;
 const ROTATE_SPEED: f32 = 65.0;
 const SCROLL_ROTATE_SPEED: f32 = 3.0;
 
-pub const MASTER_VOLUME: f32 = 0.0; //TODO 0.5
+pub const MASTER_VOLUME: f32 = 0.5;
 const HIT_SOUND_VOLUME: f32 = 0.4;
 const SPAWN_SOUND_VOLUME: f32 = 0.4;
 const GOOD_SCORE_VOLUME: f32 = 0.33;
@@ -56,15 +56,17 @@ const PLAYER_SHAPE_RADIUS: f32 = 60.0;
 const PLAYER_COLLISION_GROUP: Group = Group::GROUP_1;
 
 const BALL_SIZE: f32 = 18.0;
-const BALL_MIN_START_X: f32 = -PLAY_AREA_RADIUS / 2.0;
-const BALL_MAX_START_X: f32 = PLAY_AREA_RADIUS / 2.0;
+const EXTRA_POINT_BALL_SIZE: f32 = 25.0;
+const BALL_MIN_START_X: f32 = -PLAY_AREA_RADIUS / 3.0;
+const BALL_MAX_START_X: f32 = PLAY_AREA_RADIUS / 3.0;
 const BALL_COLLISION_GROUP: Group = Group::GROUP_2;
 
 const FREEZE_DURATION: Duration = Duration::from_secs(3);
 const BOUNCE_BACKWARDS_VELOCITY: f32 = 100.0;
 const BOUNCE_BACKWARDS_DISTANCE: f32 = BALL_SIZE + 1.0;
-const RESIZE_DURATION: Duration = Duration::from_secs(5);
-const RESIZE_AMOUNT: f32 = 40.0;
+const SCORE_AREA_RESIZE_DURATION: Duration = Duration::from_secs(5);
+const SCORE_AREA_RESIZE_AMOUNT: f32 = 40.0;
+const DUPLICATE_COOLDOWN_DURATION: Duration = Duration::from_millis(1000);
 
 const TIMER_FONT_SIZE: f32 = 40.0;
 
@@ -98,7 +100,7 @@ impl Plugin for GamePlugin {
         .insert_resource(ConfiguredSides(
             [
                 (SideId(0), SideType::SpeedUp),
-                (SideId(1), SideType::ResizeScoreAreas), //TODO
+                (SideId(1), SideType::NothingSpecial),
                 (SideId(2), SideType::NothingSpecial),
                 (SideId(3), SideType::NothingSpecial),
             ]
@@ -152,12 +154,22 @@ impl Plugin for GamePlugin {
                 .run_if(in_state(GameState::Game)),
         )
         .add_system(
+            remove_duplicate_cooldown
+                .after(handle_duplicate_effect)
+                .run_if(in_state(GameState::Game)),
+        )
+        .add_system(
             handle_resize_score_areas_effect
                 .after(collisions)
                 .run_if(in_state(GameState::Game)),
         )
         .add_system(
             handle_extreme_bounce_effect
+                .after(collisions)
+                .run_if(in_state(GameState::Game)),
+        )
+        .add_system(
+            handle_extra_points_effect
                 .after(collisions)
                 .run_if(in_state(GameState::Game)),
         )
@@ -190,6 +202,8 @@ pub struct ImageAssets {
     duplicate_side: Handle<Image>,
     #[asset(path = "images/resize_side.png")]
     resize_side: Handle<Image>,
+    #[asset(path = "images/extra_points_side.png")]
+    extra_points_side: Handle<Image>,
 }
 
 #[derive(AssetCollection, Resource)]
@@ -289,7 +303,7 @@ impl LevelSettings {
                 start_impulse_range_x: -10.0..10.0,
                 start_impulse_range_y: -25.0..-6.0,
                 duration: Duration::from_secs(64),
-                sides_to_unlock: vec![SideType::Destroy],
+                sides_to_unlock: vec![SideType::Destroy, SideType::ExtraPoints],
                 min_score: 3,
             },
             4 => LevelSettings {
@@ -300,7 +314,7 @@ impl LevelSettings {
                 start_impulse_range_x: -10.0..10.0,
                 start_impulse_range_y: -27.0..-7.0,
                 duration: Duration::from_secs(64),
-                sides_to_unlock: vec![SideType::Duplicate],
+                sides_to_unlock: vec![SideType::Duplicate, SideType::ExtremeBounce],
                 min_score: 5,
             },
             5 => LevelSettings {
@@ -311,8 +325,19 @@ impl LevelSettings {
                 start_impulse_range_x: -10.0..10.0,
                 start_impulse_range_y: -29.0..-8.0,
                 duration: Duration::from_secs(64),
-                sides_to_unlock: vec![SideType::ExtremeBounce],
-                min_score: 8,
+                sides_to_unlock: vec![],
+                min_score: 7,
+            },
+            6 => LevelSettings {
+                id: 7,
+                time_between_groups: Duration::from_secs(7),
+                time_between_spawns_in_group: Duration::from_millis(500),
+                balls_per_group: 6,
+                start_impulse_range_x: -10.0..10.0,
+                start_impulse_range_y: -30.0..-9.0,
+                duration: Duration::from_secs(64),
+                sides_to_unlock: vec![],
+                min_score: 10,
             },
             _ => LevelSettings {
                 id: self.id + 1,
@@ -320,7 +345,7 @@ impl LevelSettings {
                 time_between_spawns_in_group: self.time_between_spawns_in_group,
                 balls_per_group: self.balls_per_group + 1,
                 start_impulse_range_x: self.start_impulse_range_x.clone(),
-                start_impulse_range_y: (self.start_impulse_range_y.start - 2.0)
+                start_impulse_range_y: (self.start_impulse_range_y.start - 1.0)
                     ..self.start_impulse_range_y.end,
                 duration: self.duration,
                 min_score: self.min_score + 3,
@@ -381,6 +406,7 @@ pub enum SideType {
     Duplicate,
     ResizeScoreAreas,
     ExtremeBounce,
+    ExtraPoints,
 }
 
 impl SideType {
@@ -411,6 +437,9 @@ impl SideType {
             SideType::ExtremeBounce => {
                 commands.entity(entity).insert(ExtremeBounceEffect);
             }
+            SideType::ExtraPoints => {
+                commands.entity(entity).insert(ExtraPointsEffect);
+            }
         };
     }
 
@@ -425,6 +454,7 @@ impl SideType {
             SideType::Duplicate => "Duplicate",
             SideType::ResizeScoreAreas => "Resize",
             SideType::ExtremeBounce => "EXTREME BOUNCE",
+            SideType::ExtraPoints => "Importantize",
         }
     }
 
@@ -440,7 +470,8 @@ impl SideType {
             SideType::Destroy => "Destroys balls that hit it",
             SideType::Duplicate => "Duplicates balls that hit it",
             SideType::ResizeScoreAreas => "Temporarily increases the size of the score area matching the ball that hit it, and decreases the size of other score areas",
-            SideType::ExtremeBounce => "Contains the maximum bounciness allowed by the FDA"
+            SideType::ExtremeBounce => "Contains the maximum bounciness allowed by the FDA",
+            SideType::ExtraPoints => "Makes balls that hit it worth 1 additional point (don't get too excited, the effect can only be applied once per ball)"
         }
     }
 
@@ -468,10 +499,18 @@ struct DestroyEffect;
 struct DuplicateEffect;
 
 #[derive(Component)]
+struct DuplicateCooldown {
+    remove_at: Instant,
+}
+
+#[derive(Component)]
 struct ResizeScoreAreasEffect;
 
 #[derive(Component)]
 struct ExtremeBounceEffect;
+
+#[derive(Component)]
+struct ExtraPointsEffect;
 
 #[derive(Component)]
 struct Frozen {
@@ -486,13 +525,13 @@ struct Resized {
     original_collider: Collider,
 }
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct Ball {
     ball_type: BallType,
     points: u16,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 enum BallType {
     A,
     B,
@@ -1092,6 +1131,17 @@ fn spawn_side<'w, 's, 'a>(
                 ..default()
             })
             .insert(Restitution::coefficient(5.0)),
+        SideType::ExtraPoints => side
+            .insert(SpriteBundle {
+                texture: image_assets.extra_points_side.clone(),
+                sprite: Sprite {
+                    custom_size: Some(sprite_custom_size),
+                    color: Color::rgb(0.8, 1.0, 1.0),
+                    ..default()
+                },
+                ..default()
+            })
+            .insert(Restitution::coefficient(0.33)),
     };
 
     side.insert(CollisionGroups {
@@ -1444,15 +1494,55 @@ fn handle_destroy_effect(
 /// Deals with entities that have had the duplicate effect added
 fn handle_duplicate_effect(
     mut commands: Commands,
-    query: Query<Entity, Added<DuplicateEffect>>,
+    query: Query<
+        (
+            Entity,
+            &Ball,
+            &Transform,
+            &Velocity,
+            Option<&DuplicateCooldown>,
+        ),
+        Added<DuplicateEffect>,
+    >,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
     audio: Res<Audio>,
     audio_assets: Res<AudioAssets>,
 ) {
-    for entity in query.iter() {
-        //TODO duplicate ball
+    for (entity, ball, transform, velocity, duplicate_cooldown) in query.iter() {
+        if duplicate_cooldown.is_some() {
+            commands.entity(entity).remove::<DuplicateEffect>();
+            continue;
+        }
+
+        let impulse = Vec2::new(5.0, 5.0); //TODO make this parallel to hit side
+        spawn_ball(&mut commands, ball.clone(), &mut meshes, &mut materials)
+            .insert(TransformBundle::from(*transform))
+            .insert(*velocity)
+            .insert(ExternalImpulse {
+                impulse,
+                ..default()
+            })
+            .insert(DuplicateCooldown {
+                remove_at: Instant::now() + DUPLICATE_COOLDOWN_DURATION,
+            });
 
         //TODO sound effect
-        commands.entity(entity).remove::<DuplicateEffect>();
+        commands
+            .entity(entity)
+            .remove::<DuplicateEffect>()
+            .insert(DuplicateCooldown {
+                remove_at: Instant::now() + DUPLICATE_COOLDOWN_DURATION,
+            });
+    }
+}
+
+/// Removes the duplication cooldown component from entities once the cooldown expires
+fn remove_duplicate_cooldown(mut commands: Commands, query: Query<(Entity, &DuplicateCooldown)>) {
+    for (entity, cooldown) in query.iter() {
+        if Instant::now().duration_since(cooldown.remove_at) > Duration::ZERO {
+            commands.entity(entity).remove::<DuplicateCooldown>();
+        }
     }
 }
 
@@ -1469,7 +1559,7 @@ fn handle_resize_score_areas_effect(
         for (score_area_entity, score_area, mut mesh, mut collider) in score_areas_query.iter_mut()
         {
             commands.entity(score_area_entity).insert(Resized {
-                unresize_at: Instant::now() + RESIZE_DURATION,
+                unresize_at: Instant::now() + SCORE_AREA_RESIZE_DURATION,
                 original_mesh: meshes
                     .add(shape::Circle::new(SCORE_AREA_SIZE).into())
                     .into(),
@@ -1478,14 +1568,14 @@ fn handle_resize_score_areas_effect(
 
             if ball.ball_type == score_area.0 {
                 *mesh = meshes
-                    .add(shape::Circle::new(SCORE_AREA_SIZE + RESIZE_AMOUNT).into())
+                    .add(shape::Circle::new(SCORE_AREA_SIZE + SCORE_AREA_RESIZE_AMOUNT).into())
                     .into();
-                *collider = Collider::ball(SCORE_AREA_SIZE + RESIZE_AMOUNT);
+                *collider = Collider::ball(SCORE_AREA_SIZE + SCORE_AREA_RESIZE_AMOUNT);
             } else {
                 *mesh = meshes
-                    .add(shape::Circle::new(SCORE_AREA_SIZE - RESIZE_AMOUNT).into())
+                    .add(shape::Circle::new(SCORE_AREA_SIZE - SCORE_AREA_RESIZE_AMOUNT).into())
                     .into();
-                *collider = Collider::ball(SCORE_AREA_SIZE - RESIZE_AMOUNT);
+                *collider = Collider::ball(SCORE_AREA_SIZE - SCORE_AREA_RESIZE_AMOUNT);
             }
         }
 
@@ -1510,6 +1600,28 @@ fn handle_extreme_bounce_effect(
             PlaybackSettings::ONCE.with_volume(0.75 * MASTER_VOLUME),
         );
         commands.entity(entity).remove::<ExtremeBounceEffect>();
+    }
+}
+
+/// Deals with entities that have had the resize score areas effect added
+fn handle_extra_points_effect(
+    mut commands: Commands,
+    mut query: Query<
+        (Entity, &mut Ball, &mut Mesh2dHandle, &mut Collider),
+        Added<ExtraPointsEffect>,
+    >,
+    mut meshes: ResMut<Assets<Mesh>>,
+    audio: Res<Audio>,
+    audio_assets: Res<AudioAssets>,
+) {
+    for (ball_entity, mut ball, mut mesh, mut collider) in query.iter_mut() {
+        ball.points += 1;
+        *mesh = meshes
+            .add(shape::Circle::new(EXTRA_POINT_BALL_SIZE).into())
+            .into();
+        *collider = Collider::ball(EXTRA_POINT_BALL_SIZE);
+
+        //TODO sound effect
     }
 }
 

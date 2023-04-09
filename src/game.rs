@@ -1520,8 +1520,14 @@ fn update_time_display(
     mut time_text_query: Query<&mut Text, With<TimeText>>,
 ) {
     for mut text in time_text_query.iter_mut() {
-        let seconds_left = (end_time.0 - Instant::now()).as_secs();
-        text.sections[0].value = format!("{seconds_left}");
+        let time_left = end_time.0 - Instant::now();
+        let seconds_left = time_left.as_secs();
+        if seconds_left <= 5 {
+            text.sections[0].value = format!("{:.1}", time_left.as_millis() as f32 / 1000.0);
+        } else {
+            text.sections[0].value = format!("{seconds_left}");
+        }
+
         if seconds_left == 0 {
             text.sections[0].style.font_size = TIMER_FONT_SIZE + 21.0;
             text.sections[0].style.color = Color::rgb(1.0, 0.0, 0.0);

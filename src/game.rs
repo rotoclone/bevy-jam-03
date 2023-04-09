@@ -90,9 +90,9 @@ impl Plugin for GamePlugin {
         .insert_resource(ConfiguredSides(
             [
                 (SideId(0), SideType::SpeedUp),
-                (SideId(1), SideType::Destroy),          //TODO
-                (SideId(2), SideType::Duplicate),        //TODO
-                (SideId(3), SideType::ResizeScoreAreas), //TODO
+                (SideId(1), SideType::NothingSpecial),
+                (SideId(2), SideType::NothingSpecial),
+                (SideId(3), SideType::NothingSpecial),
             ]
             .into(),
         ))
@@ -267,7 +267,7 @@ impl LevelSettings {
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 4,
                 start_impulse_range_x: -10.0..10.0,
-                start_impulse_range_y: -25.0..-5.0,
+                start_impulse_range_y: -25.0..-6.0,
                 duration: Duration::from_secs(60),
                 sides_to_unlock: vec![SideType::Destroy],
                 min_score: 3,
@@ -278,7 +278,7 @@ impl LevelSettings {
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 5,
                 start_impulse_range_x: -10.0..10.0,
-                start_impulse_range_y: -27.0..-5.0,
+                start_impulse_range_y: -27.0..-7.0,
                 duration: Duration::from_secs(60),
                 sides_to_unlock: vec![SideType::Duplicate],
                 min_score: 5,
@@ -300,7 +300,7 @@ impl LevelSettings {
 }
 
 #[derive(Resource)]
-pub struct UnlockedSides(pub HashSet<SideType>);
+pub struct UnlockedSides(pub Vec<SideType>);
 
 #[derive(Resource)]
 pub struct ConfiguredSides(pub HashMap<SideId, SideType>);
@@ -392,7 +392,7 @@ impl SideType {
     /// Gets the description of this side
     pub fn description(&self) -> &str {
         match self {
-            SideType::NothingSpecial => "Nothing special",
+            SideType::NothingSpecial => "Balls bounce off of it",
             SideType::SpeedUp => "Bounces balls real fast",
             SideType::FreezeOthers => {
                 "Temporarily freezes all balls other than the one that hit it"

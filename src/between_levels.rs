@@ -58,7 +58,7 @@ fn unlock_sides(
 ) {
     if score.0 >= level_settings.min_score {
         for unlocked_side in &level_settings.sides_to_unlock {
-            unlocked_sides.0.insert(*unlocked_side);
+            unlocked_sides.0.push(*unlocked_side);
         }
     }
 }
@@ -417,8 +417,8 @@ fn spawn_side_customization_ui(
                     parent
                         .spawn(NodeBundle {
                             background_color: BackgroundColor(Color::Rgba {
-                                red: 1.0,
-                                green: 1.0,
+                                red: 0.0,
+                                green: 0.8,
                                 blue: 1.0,
                                 alpha: 0.1,
                             }),

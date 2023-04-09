@@ -64,6 +64,8 @@ const FREEZE_DURATION: Duration = Duration::from_secs(2);
 const BOUNCE_BACKWARDS_VELOCITY: f32 = 100.0;
 const BOUNCE_BACKWARDS_DISTANCE: f32 = BALL_SIZE + 1.0;
 
+const TIMER_FONT_SIZE: f32 = 40.0;
+
 pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
@@ -820,7 +822,7 @@ fn game_setup(
                 "",
                 TextStyle {
                     font: asset_server.load(MAIN_FONT),
-                    font_size: 40.0,
+                    font_size: TIMER_FONT_SIZE,
                     color: Color::WHITE,
                 },
             )
@@ -1518,8 +1520,27 @@ fn update_time_display(
     mut time_text_query: Query<&mut Text, With<TimeText>>,
 ) {
     for mut text in time_text_query.iter_mut() {
-        let time_left = end_time.0 - Instant::now();
-        text.sections[0].value = format!("{}", time_left.as_secs());
+        let seconds_left = (end_time.0 - Instant::now()).as_secs();
+        text.sections[0].value = format!("{seconds_left}");
+        if seconds_left == 0 {
+            text.sections[0].style.font_size = TIMER_FONT_SIZE + 21.0;
+            text.sections[0].style.color = Color::rgb(1.0, 0.0, 0.0);
+        } else if seconds_left <= 1 {
+            text.sections[0].style.font_size = TIMER_FONT_SIZE + 15.0;
+            text.sections[0].style.color = Color::rgb(1.0, 0.1, 0.1);
+        } else if seconds_left <= 2 {
+            text.sections[0].style.font_size = TIMER_FONT_SIZE + 10.0;
+            text.sections[0].style.color = Color::rgb(1.0, 0.3, 0.3);
+        } else if seconds_left <= 3 {
+            text.sections[0].style.font_size = TIMER_FONT_SIZE + 6.0;
+            text.sections[0].style.color = Color::rgb(1.0, 0.5, 0.5);
+        } else if seconds_left <= 4 {
+            text.sections[0].style.font_size = TIMER_FONT_SIZE + 3.0;
+            text.sections[0].style.color = Color::rgb(1.0, 0.7, 0.7);
+        } else if seconds_left <= 5 {
+            text.sections[0].style.font_size = TIMER_FONT_SIZE + 1.0;
+            text.sections[0].style.color = Color::rgb(1.0, 0.9, 0.9);
+        }
     }
 }
 

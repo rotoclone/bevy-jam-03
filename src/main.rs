@@ -17,7 +17,7 @@ use game::*;
 mod between_levels;
 use between_levels::*;
 
-const DEV_MODE: bool = true;
+const DEV_MODE: bool = false;
 
 const MAIN_FONT: &str = "fonts/Quicksand-Medium.ttf";
 

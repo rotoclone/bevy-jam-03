@@ -90,9 +90,9 @@ impl Plugin for GamePlugin {
         .insert_resource(ConfiguredSides(
             [
                 (SideId(0), SideType::SpeedUp),
-                (SideId(1), SideType::NothingSpecial),
-                (SideId(2), SideType::NothingSpecial),
-                (SideId(3), SideType::NothingSpecial),
+                (SideId(1), SideType::Destroy),          //TODO
+                (SideId(2), SideType::Duplicate),        //TODO
+                (SideId(3), SideType::ResizeScoreAreas), //TODO
             ]
             .into(),
         ))
@@ -133,6 +133,21 @@ impl Plugin for GamePlugin {
                 .after(collisions)
                 .run_if(in_state(GameState::Game)),
         )
+        .add_system(
+            handle_destroy_effect
+                .after(collisions)
+                .run_if(in_state(GameState::Game)),
+        )
+        .add_system(
+            handle_duplicate_effect
+                .after(collisions)
+                .run_if(in_state(GameState::Game)),
+        )
+        .add_system(
+            handle_resize_score_areas_effect
+                .after(collisions)
+                .run_if(in_state(GameState::Game)),
+        )
         .add_system(unfreeze_entities.run_if(in_state(GameState::Game)))
         .add_system(
             end_level
@@ -153,6 +168,12 @@ pub struct ImageAssets {
     freeze_others_side: Handle<Image>,
     #[asset(path = "images/bounce_backwards_side.png")]
     bounce_backwards_side: Handle<Image>,
+    #[asset(path = "images/destroy_side.png")]
+    destroy_side: Handle<Image>,
+    #[asset(path = "images/duplicate_side.png")]
+    duplicate_side: Handle<Image>,
+    #[asset(path = "images/resize_side.png")]
+    resize_side: Handle<Image>,
 }
 
 #[derive(AssetCollection, Resource)]
@@ -204,13 +225,13 @@ impl LevelSettings {
     fn first_level() -> LevelSettings {
         LevelSettings {
             id: 1,
-            time_between_groups: Duration::from_secs(10),
+            time_between_groups: Duration::from_secs(9),
             time_between_spawns_in_group: Duration::from_millis(500),
             balls_per_group: 3,
             start_impulse_range_x: -10.0..10.0,
             start_impulse_range_y: -20.0..-5.0,
             duration: Duration::from_secs(30),
-            sides_to_unlock: vec![SideType::FreezeOthers, SideType::BounceBackwards], //TODO remove one
+            sides_to_unlock: vec![SideType::FreezeOthers],
             min_score: 1,
         }
     }
@@ -226,7 +247,7 @@ impl LevelSettings {
                 start_impulse_range_x: -10.0..10.0,
                 start_impulse_range_y: -21.0..-5.0,
                 duration: Duration::from_secs(40),
-                sides_to_unlock: vec![SideType::BounceBackwards],
+                sides_to_unlock: vec![SideType::ResizeScoreAreas],
                 min_score: 1,
             },
             2 => LevelSettings {
@@ -237,7 +258,7 @@ impl LevelSettings {
                 start_impulse_range_x: -10.0..10.0,
                 start_impulse_range_y: -23.0..-5.0,
                 duration: Duration::from_secs(50),
-                sides_to_unlock: vec![],
+                sides_to_unlock: vec![SideType::BounceBackwards],
                 min_score: 1,
             },
             3 => LevelSettings {
@@ -248,8 +269,19 @@ impl LevelSettings {
                 start_impulse_range_x: -10.0..10.0,
                 start_impulse_range_y: -25.0..-5.0,
                 duration: Duration::from_secs(60),
-                sides_to_unlock: vec![],
+                sides_to_unlock: vec![SideType::Destroy],
                 min_score: 3,
+            },
+            4 => LevelSettings {
+                id: 5,
+                time_between_groups: Duration::from_secs(7),
+                time_between_spawns_in_group: Duration::from_millis(500),
+                balls_per_group: 5,
+                start_impulse_range_x: -10.0..10.0,
+                start_impulse_range_y: -27.0..-5.0,
+                duration: Duration::from_secs(60),
+                sides_to_unlock: vec![SideType::Duplicate],
+                min_score: 5,
             },
             _ => LevelSettings {
                 id: self.id + 1,
@@ -260,7 +292,7 @@ impl LevelSettings {
                 start_impulse_range_y: (self.start_impulse_range_y.start - 2.0)
                     ..self.start_impulse_range_y.end,
                 duration: self.duration,
-                min_score: self.min_score + 2,
+                min_score: self.min_score + 3,
                 sides_to_unlock: vec![],
             },
         }
@@ -311,6 +343,9 @@ pub enum SideType {
     SpeedUp,
     FreezeOthers,
     BounceBackwards,
+    Destroy,
+    Duplicate,
+    ResizeScoreAreas,
 }
 
 impl SideType {
@@ -329,6 +364,15 @@ impl SideType {
                     .entity(entity)
                     .insert(BounceBackwardsEffect { side_hit: side_id });
             }
+            SideType::Destroy => {
+                commands.entity(entity).insert(DestroyEffect);
+            }
+            SideType::Duplicate => {
+                commands.entity(entity).insert(DuplicateEffect);
+            }
+            SideType::ResizeScoreAreas => {
+                commands.entity(entity).insert(ResizeScoreAreasEffect);
+            }
         };
     }
 
@@ -339,6 +383,9 @@ impl SideType {
             SideType::SpeedUp => "Bouncy",
             SideType::FreezeOthers => "Freeze",
             SideType::BounceBackwards => "Bounce Backwards",
+            SideType::Destroy => "Destroy",
+            SideType::Duplicate => "Duplicate",
+            SideType::ResizeScoreAreas => "Resize",
         }
     }
 
@@ -351,6 +398,9 @@ impl SideType {
                 "Temporarily freezes all balls other than the one that hit it"
             }
             SideType::BounceBackwards => "Bounces balls backwards out the other side of you",
+            SideType::Destroy => "Destroys balls that hit it",
+            SideType::Duplicate => "Duplicates balls that hit it",
+            SideType::ResizeScoreAreas => "Temporarily increases the size of the score area matching the ball that hit it, and decreases the size of other score areas",
         }
     }
 
@@ -370,6 +420,15 @@ struct FreezeOthersEffect;
 struct BounceBackwardsEffect {
     side_hit: SideId,
 }
+
+#[derive(Component)]
+struct DestroyEffect;
+
+#[derive(Component)]
+struct DuplicateEffect;
+
+#[derive(Component)]
+struct ResizeScoreAreasEffect;
 
 #[derive(Component)]
 struct Frozen {
@@ -827,7 +886,7 @@ pub fn spawn_player_shape<'w, 's, 'a>(
         .with_children(|parent| {
             // side 0
             let side_0_type = configured_sides.get(&SideId(0));
-            spawn_side(parent, side_0_type, image_assets)
+            spawn_side(parent, side_0_type, side_sprite_custom_size, image_assets)
                 .insert(SideId(0))
                 .insert(side_collider.clone())
                 .insert(
@@ -837,15 +896,11 @@ pub fn spawn_player_shape<'w, 's, 'a>(
                         0.0,
                     ))
                     .with_rotation(Quat::from_rotation_z(45.0_f32.to_radians())),
-                )
-                .insert(Sprite {
-                    custom_size: Some(side_sprite_custom_size),
-                    ..default()
-                });
+                );
 
             // side 1
             let side_1_type = configured_sides.get(&SideId(1));
-            spawn_side(parent, side_1_type, image_assets)
+            spawn_side(parent, side_1_type, side_sprite_custom_size, image_assets)
                 .insert(SideId(1))
                 .insert(side_collider.clone())
                 .insert(
@@ -855,15 +910,11 @@ pub fn spawn_player_shape<'w, 's, 'a>(
                         0.0,
                     ))
                     .with_rotation(Quat::from_rotation_z(-45.0_f32.to_radians())),
-                )
-                .insert(Sprite {
-                    custom_size: Some(side_sprite_custom_size),
-                    ..default()
-                });
+                );
 
             // side 2
             let side_2_type = configured_sides.get(&SideId(2));
-            spawn_side(parent, side_2_type, image_assets)
+            spawn_side(parent, side_2_type, side_sprite_custom_size, image_assets)
                 .insert(SideId(2))
                 .insert(side_collider.clone())
                 .insert(
@@ -873,15 +924,11 @@ pub fn spawn_player_shape<'w, 's, 'a>(
                         0.0,
                     ))
                     .with_rotation(Quat::from_rotation_z(-135.0_f32.to_radians())),
-                )
-                .insert(Sprite {
-                    custom_size: Some(side_sprite_custom_size),
-                    ..default()
-                });
+                );
 
             // side 3
             let side_3_type = configured_sides.get(&SideId(3));
-            spawn_side(parent, side_3_type, image_assets)
+            spawn_side(parent, side_3_type, side_sprite_custom_size, image_assets)
                 .insert(SideId(3))
                 .insert(side_collider.clone())
                 .insert(
@@ -891,11 +938,7 @@ pub fn spawn_player_shape<'w, 's, 'a>(
                         0.0,
                     ))
                     .with_rotation(Quat::from_rotation_z(135.0_f32.to_radians())),
-                )
-                .insert(Sprite {
-                    custom_size: Some(side_sprite_custom_size),
-                    ..default()
-                });
+                );
         });
 
     player_shape
@@ -905,6 +948,7 @@ pub fn spawn_player_shape<'w, 's, 'a>(
 fn spawn_side<'w, 's, 'a>(
     parent: &'a mut ChildBuilder<'w, 's, '_>,
     side_type: SideType,
+    sprite_custom_size: Vec2,
     image_assets: &ImageAssets,
 ) -> EntityCommands<'w, 's, 'a> {
     let mut side = parent.spawn(ActiveEvents::COLLISION_EVENTS);
@@ -913,27 +957,80 @@ fn spawn_side<'w, 's, 'a>(
         SideType::NothingSpecial => side
             .insert(SpriteBundle {
                 texture: image_assets.regular_side.clone(),
+                sprite: Sprite {
+                    custom_size: Some(sprite_custom_size),
+                    color: Color::rgb(0.8, 0.8, 0.8),
+                    ..default()
+                },
                 ..default()
             })
             .insert(Restitution::coefficient(0.33)),
         SideType::SpeedUp => side
             .insert(SpriteBundle {
                 texture: image_assets.bouncy_side.clone(),
+                sprite: Sprite {
+                    custom_size: Some(sprite_custom_size),
+                    color: Color::rgb(0.8, 1.0, 0.8),
+                    ..default()
+                },
                 ..default()
             })
             .insert(Restitution::coefficient(2.0)),
         SideType::FreezeOthers => side
             .insert(SpriteBundle {
                 texture: image_assets.freeze_others_side.clone(),
+                sprite: Sprite {
+                    custom_size: Some(sprite_custom_size),
+                    color: Color::rgb(1.0, 1.0, 1.0),
+                    ..default()
+                },
                 ..default()
             })
             .insert(Restitution::coefficient(0.1)),
         SideType::BounceBackwards => side
             .insert(SpriteBundle {
                 texture: image_assets.bounce_backwards_side.clone(),
+                sprite: Sprite {
+                    custom_size: Some(sprite_custom_size),
+                    color: Color::rgb(1.0, 1.0, 0.8),
+                    ..default()
+                },
                 ..default()
             })
             .insert(Restitution::coefficient(0.1)),
+        SideType::Destroy => side
+            .insert(SpriteBundle {
+                texture: image_assets.destroy_side.clone(),
+                sprite: Sprite {
+                    custom_size: Some(sprite_custom_size),
+                    color: Color::rgb(1.0, 0.8, 0.8),
+                    ..default()
+                },
+                ..default()
+            })
+            .insert(Restitution::coefficient(0.0)),
+        SideType::Duplicate => side
+            .insert(SpriteBundle {
+                texture: image_assets.duplicate_side.clone(),
+                sprite: Sprite {
+                    custom_size: Some(sprite_custom_size),
+                    color: Color::rgb(0.8, 0.8, 1.0),
+                    ..default()
+                },
+                ..default()
+            })
+            .insert(Restitution::coefficient(0.5)),
+        SideType::ResizeScoreAreas => side
+            .insert(SpriteBundle {
+                texture: image_assets.resize_side.clone(),
+                sprite: Sprite {
+                    custom_size: Some(sprite_custom_size),
+                    color: Color::rgb(1.0, 0.8, 1.0),
+                    ..default()
+                },
+                ..default()
+            })
+            .insert(Restitution::coefficient(0.33)),
     };
 
     side.insert(CollisionGroups {
@@ -1224,7 +1321,7 @@ fn handle_freeze_others_effect(
     }
 }
 
-/// Deals with entities that have had the speed up effect added
+/// Deals with entities that have had the bounce backwards effect added
 fn handle_bounce_backwards_effect(
     mut commands: Commands,
     mut query: Query<
@@ -1261,6 +1358,52 @@ fn handle_bounce_backwards_effect(
 
         //TODO sound effect
         commands.entity(entity).remove::<BounceBackwardsEffect>();
+    }
+}
+
+/// Deals with entities that have had the destroy effect added
+fn handle_destroy_effect(
+    mut commands: Commands,
+    query: Query<Entity, Added<DestroyEffect>>,
+    mut entities_to_despawn: ResMut<EntitiesToDespawn>,
+    audio: Res<Audio>,
+    audio_assets: Res<AudioAssets>,
+) {
+    for entity in query.iter() {
+        entities_to_despawn.0.push(entity);
+
+        //TODO sound effect
+        commands.entity(entity).remove::<DestroyEffect>();
+    }
+}
+
+/// Deals with entities that have had the duplicate effect added
+fn handle_duplicate_effect(
+    mut commands: Commands,
+    query: Query<Entity, Added<DuplicateEffect>>,
+    audio: Res<Audio>,
+    audio_assets: Res<AudioAssets>,
+) {
+    for entity in query.iter() {
+        //TODO duplicate ball
+
+        //TODO sound effect
+        commands.entity(entity).remove::<DuplicateEffect>();
+    }
+}
+
+/// Deals with entities that have had the resize score areas effect added
+fn handle_resize_score_areas_effect(
+    mut commands: Commands,
+    query: Query<Entity, Added<ResizeScoreAreasEffect>>,
+    audio: Res<Audio>,
+    audio_assets: Res<AudioAssets>,
+) {
+    for entity in query.iter() {
+        //TODO resize score areas
+
+        //TODO sound effect
+        commands.entity(entity).remove::<ResizeScoreAreasEffect>();
     }
 }
 

@@ -3,6 +3,8 @@ use crate::*;
 const PLAYER_PREVIEW_TRANSFORM: Transform =
     Transform::from_translation(Vec3::new(0.0, -180.0, 0.0));
 
+const MENU_MUSIC_VOLUME: f32 = 0.25;
+
 pub struct BetweenLevelsPlugin;
 
 impl Plugin for BetweenLevelsPlugin {
@@ -17,11 +19,16 @@ impl Plugin for BetweenLevelsPlugin {
             despawn_components_system::<BetweenLevelsComponent>
                 .in_schedule(OnExit(GameState::BetweenLevels)),
         )
+        .add_system(start_backround_music.in_schedule(OnEnter(GameState::BetweenLevels)))
+        .add_system(stop_background_music.in_schedule(OnExit(GameState::BetweenLevels)))
         .add_system(side_selection_buttons_system.run_if(in_state(GameState::BetweenLevels)))
         .add_system(next_level_button_system.run_if(in_state(GameState::BetweenLevels)))
         .add_system(restart_level_button_system.run_if(in_state(GameState::BetweenLevels)));
     }
 }
+
+#[derive(Resource)]
+struct MenuMusicController(Handle<AudioSink>);
 
 #[derive(Component)]
 struct BetweenLevelsComponent;
@@ -584,6 +591,31 @@ fn side_selection_buttons_system(
             .insert(BetweenLevelsComponent)
             .insert(PlayerPreview);
         }
+    }
+}
+
+/// Starts playing the background music
+fn start_backround_music(
+    mut commands: Commands,
+    audio: Res<Audio>,
+    audio_assets: Res<AudioAssets>,
+    audio_sinks: Res<Assets<AudioSink>>,
+) {
+    let handle = audio_sinks.get_handle(audio.play_with_settings(
+        audio_assets.menu_music.clone(),
+        PlaybackSettings::LOOP.with_volume(MENU_MUSIC_VOLUME * MASTER_VOLUME),
+    ));
+
+    commands.insert_resource(MenuMusicController(handle));
+}
+
+/// Stops playing the background music
+fn stop_background_music(
+    music_controller: Res<MenuMusicController>,
+    audio_sinks: Res<Assets<AudioSink>>,
+) {
+    if let Some(sink) = audio_sinks.get(&music_controller.0) {
+        sink.stop();
     }
 }
 

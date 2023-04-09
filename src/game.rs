@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     ops::Range,
     time::{Duration, Instant},
 };
@@ -33,11 +33,12 @@ const MOVE_SPEED: f32 = 150000.0;
 const ROTATE_SPEED: f32 = 65.0;
 const SCROLL_ROTATE_SPEED: f32 = 3.0;
 
-const MASTER_VOLUME: f32 = 0.5;
-const HIT_SOUND_VOLUME: f32 = 0.5;
-const SPAWN_SOUND_VOLUME: f32 = 0.5;
-const GOOD_SCORE_VOLUME: f32 = 0.8;
-const BAD_SCORE_VOLUME: f32 = 0.5;
+pub const MASTER_VOLUME: f32 = 0.5;
+const HIT_SOUND_VOLUME: f32 = 0.4;
+const SPAWN_SOUND_VOLUME: f32 = 0.4;
+const GOOD_SCORE_VOLUME: f32 = 0.33;
+const BAD_SCORE_VOLUME: f32 = 0.4;
+const BG_MUSIC_VOLUME: f32 = 0.5;
 
 const WALL_COLOR: Color = Color::Rgba {
     red: 0.2,
@@ -83,6 +84,9 @@ impl Plugin for GamePlugin {
             .add_system(
                 despawn_components_system::<GameComponent>.in_schedule(OnExit(GameState::Game)),
             );
+
+        app.add_system(start_backround_music.in_schedule(OnEnter(GameState::Game)))
+            .add_system(stop_background_music.in_schedule(OnExit(GameState::Game)));
 
         app.insert_resource(UnlockedSides(
             [SideType::NothingSpecial, SideType::SpeedUp].into(),
@@ -148,6 +152,11 @@ impl Plugin for GamePlugin {
                 .after(collisions)
                 .run_if(in_state(GameState::Game)),
         )
+        .add_system(
+            handle_extreme_bounce_effect
+                .after(collisions)
+                .run_if(in_state(GameState::Game)),
+        )
         .add_system(unfreeze_entities.run_if(in_state(GameState::Game)))
         .add_system(
             end_level
@@ -164,6 +173,8 @@ pub struct ImageAssets {
     regular_side: Handle<Image>,
     #[asset(path = "images/bouncy_side.png")]
     bouncy_side: Handle<Image>,
+    #[asset(path = "images/extra_bouncy_side.png")]
+    extra_bouncy_side: Handle<Image>,
     #[asset(path = "images/freeze_side.png")]
     freeze_others_side: Handle<Image>,
     #[asset(path = "images/bounce_backwards_side.png")]
@@ -177,7 +188,7 @@ pub struct ImageAssets {
 }
 
 #[derive(AssetCollection, Resource)]
-struct AudioAssets {
+pub struct AudioAssets {
     #[asset(path = "sounds/hit.ogg")]
     hit: Handle<AudioSource>,
     #[asset(path = "sounds/up.ogg")]
@@ -190,6 +201,10 @@ struct AudioAssets {
     good: Handle<AudioSource>,
     #[asset(path = "sounds/bad.ogg")]
     bad: Handle<AudioSource>,
+    #[asset(path = "sounds/choobcasher2.ogg")]
+    game_music: Handle<AudioSource>,
+    #[asset(path = "sounds/choobcasher.ogg")]
+    pub menu_music: Handle<AudioSource>,
 }
 
 #[derive(Resource)]
@@ -225,12 +240,12 @@ impl LevelSettings {
     fn first_level() -> LevelSettings {
         LevelSettings {
             id: 1,
-            time_between_groups: Duration::from_secs(9),
+            time_between_groups: Duration::from_secs(10),
             time_between_spawns_in_group: Duration::from_millis(500),
             balls_per_group: 3,
             start_impulse_range_x: -10.0..10.0,
             start_impulse_range_y: -20.0..-5.0,
-            duration: Duration::from_secs(30),
+            duration: Duration::from_secs(32),
             sides_to_unlock: vec![SideType::FreezeOthers],
             min_score: 1,
         }
@@ -268,7 +283,7 @@ impl LevelSettings {
                 balls_per_group: 4,
                 start_impulse_range_x: -10.0..10.0,
                 start_impulse_range_y: -25.0..-6.0,
-                duration: Duration::from_secs(60),
+                duration: Duration::from_secs(64),
                 sides_to_unlock: vec![SideType::Destroy],
                 min_score: 3,
             },
@@ -279,9 +294,20 @@ impl LevelSettings {
                 balls_per_group: 5,
                 start_impulse_range_x: -10.0..10.0,
                 start_impulse_range_y: -27.0..-7.0,
-                duration: Duration::from_secs(60),
+                duration: Duration::from_secs(64),
                 sides_to_unlock: vec![SideType::Duplicate],
                 min_score: 5,
+            },
+            5 => LevelSettings {
+                id: 6,
+                time_between_groups: Duration::from_secs(7),
+                time_between_spawns_in_group: Duration::from_millis(500),
+                balls_per_group: 6,
+                start_impulse_range_x: -10.0..10.0,
+                start_impulse_range_y: -29.0..-8.0,
+                duration: Duration::from_secs(64),
+                sides_to_unlock: vec![SideType::ExtremeBounce],
+                min_score: 8,
             },
             _ => LevelSettings {
                 id: self.id + 1,
@@ -315,6 +341,9 @@ impl ConfiguredSides {
     }
 }
 
+#[derive(Resource)]
+struct GameMusicController(Handle<AudioSink>);
+
 #[derive(Component)]
 struct LoadingComponent;
 
@@ -346,6 +375,7 @@ pub enum SideType {
     Destroy,
     Duplicate,
     ResizeScoreAreas,
+    ExtremeBounce,
 }
 
 impl SideType {
@@ -373,6 +403,9 @@ impl SideType {
             SideType::ResizeScoreAreas => {
                 commands.entity(entity).insert(ResizeScoreAreasEffect);
             }
+            SideType::ExtremeBounce => {
+                commands.entity(entity).insert(ExtremeBounceEffect);
+            }
         };
     }
 
@@ -386,6 +419,7 @@ impl SideType {
             SideType::Destroy => "Destroy",
             SideType::Duplicate => "Duplicate",
             SideType::ResizeScoreAreas => "Resize",
+            SideType::ExtremeBounce => "EXTREME BOUNCE",
         }
     }
 
@@ -401,6 +435,7 @@ impl SideType {
             SideType::Destroy => "Destroys balls that hit it",
             SideType::Duplicate => "Duplicates balls that hit it",
             SideType::ResizeScoreAreas => "Temporarily increases the size of the score area matching the ball that hit it, and decreases the size of other score areas",
+            SideType::ExtremeBounce => "Contains the maximum bounciness allowed by the FDA"
         }
     }
 
@@ -429,6 +464,9 @@ struct DuplicateEffect;
 
 #[derive(Component)]
 struct ResizeScoreAreasEffect;
+
+#[derive(Component)]
+struct ExtremeBounceEffect;
 
 #[derive(Component)]
 struct Frozen {
@@ -1031,6 +1069,17 @@ fn spawn_side<'w, 's, 'a>(
                 ..default()
             })
             .insert(Restitution::coefficient(0.33)),
+        SideType::ExtremeBounce => side
+            .insert(SpriteBundle {
+                texture: image_assets.extra_bouncy_side.clone(),
+                sprite: Sprite {
+                    custom_size: Some(sprite_custom_size),
+                    color: Color::rgb(0.5, 1.0, 0.5),
+                    ..default()
+                },
+                ..default()
+            })
+            .insert(Restitution::coefficient(5.0)),
     };
 
     side.insert(CollisionGroups {
@@ -1284,7 +1333,10 @@ fn handle_speed_up_effect(
     audio_assets: Res<AudioAssets>,
 ) {
     for entity in query.iter() {
-        audio.play(audio_assets.up.clone());
+        audio.play_with_settings(
+            audio_assets.up.clone(),
+            PlaybackSettings::ONCE.with_volume(0.75 * MASTER_VOLUME),
+        );
         commands.entity(entity).remove::<SpeedUpEffect>();
     }
 }
@@ -1407,6 +1459,23 @@ fn handle_resize_score_areas_effect(
     }
 }
 
+/// Deals with entities that have had the extreme bounce effect added
+fn handle_extreme_bounce_effect(
+    mut commands: Commands,
+    query: Query<Entity, Added<ExtremeBounceEffect>>,
+    audio: Res<Audio>,
+    audio_assets: Res<AudioAssets>,
+) {
+    for entity in query.iter() {
+        //TODO unique sound
+        audio.play_with_settings(
+            audio_assets.up.clone(),
+            PlaybackSettings::ONCE.with_volume(0.75 * MASTER_VOLUME),
+        );
+        commands.entity(entity).remove::<ExtremeBounceEffect>();
+    }
+}
+
 /// Handles unfreezing entities
 fn unfreeze_entities(
     mut commands: Commands,
@@ -1470,6 +1539,31 @@ fn update_rotate_sensitivity_display(
 fn end_level(mut next_state: ResMut<NextState<GameState>>, end_time: Res<LevelEndTime>) {
     if Instant::now().duration_since(end_time.0) > Duration::ZERO {
         next_state.set(GameState::BetweenLevels);
+    }
+}
+
+/// Starts playing the background music
+fn start_backround_music(
+    mut commands: Commands,
+    audio: Res<Audio>,
+    audio_assets: Res<AudioAssets>,
+    audio_sinks: Res<Assets<AudioSink>>,
+) {
+    let handle = audio_sinks.get_handle(audio.play_with_settings(
+        audio_assets.game_music.clone(),
+        PlaybackSettings::LOOP.with_volume(BG_MUSIC_VOLUME * MASTER_VOLUME),
+    ));
+
+    commands.insert_resource(GameMusicController(handle));
+}
+
+/// Stops playing the background music
+fn stop_background_music(
+    music_controller: Res<GameMusicController>,
+    audio_sinks: Res<Assets<AudioSink>>,
+) {
+    if let Some(sink) = audio_sinks.get(&music_controller.0) {
+        sink.stop();
     }
 }
 

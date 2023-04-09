@@ -1,6 +1,7 @@
 use crate::*;
 
-const PLAYER_PREVIEW_TRANSFORM: Transform = Transform::from_translation(Vec3::new(0.0, 0.0, 0.0));
+const PLAYER_PREVIEW_TRANSFORM: Transform =
+    Transform::from_translation(Vec3::new(0.0, -180.0, 0.0));
 
 pub struct BetweenLevelsPlugin;
 
@@ -95,10 +96,7 @@ fn between_levels_setup(
         .with_children(|parent| {
             parent.spawn(
                 TextBundle::from_section(
-                    format!(
-                        "You got {} points on level {}! wow",
-                        score.0, level_settings.id
-                    ),
+                    format!("You got {} points on level {}", score.0, level_settings.id),
                     TextStyle {
                         font: asset_server.load(MAIN_FONT),
                         font_size: 45.0,
@@ -118,6 +116,7 @@ fn between_levels_setup(
                     .spawn(NodeBundle {
                         style: Style {
                             size: Size::new(Val::Percent(100.0), Val::Auto),
+                            flex_direction: FlexDirection::Column,
                             justify_content: JustifyContent::Center,
                             align_items: AlignItems::Center,
                             ..default()
@@ -145,18 +144,36 @@ fn between_levels_setup(
                         }
                     });
             }
-        });
 
-    // side customization
-    for side in 0..PLAYER_SHAPE_SIDES {
-        spawn_side_customization_ui(
-            SideId(side),
-            &mut commands,
-            &asset_server,
-            &unlocked_sides,
-            &configured_sides,
-        );
-    }
+            // side customization
+            parent
+                .spawn(NodeBundle {
+                    style: Style {
+                        size: Size::new(Val::Percent(100.0), Val::Auto),
+                        margin: UiRect {
+                            top: Val::Px(25.0),
+                            ..default()
+                        },
+                        flex_direction: FlexDirection::Row,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    ..default()
+                })
+                .insert(BetweenLevelsComponent)
+                .with_children(|parent| {
+                    for side in 0..PLAYER_SHAPE_SIDES {
+                        spawn_side_customization_ui(
+                            SideId(side),
+                            parent,
+                            &asset_server,
+                            &unlocked_sides,
+                            &configured_sides,
+                        );
+                    }
+                });
+        });
 
     // player preview
     spawn_player_shape(
@@ -245,7 +262,7 @@ fn between_levels_setup(
                         ),
                         TextStyle {
                             font: asset_server.load(MAIN_FONT),
-                            font_size: 40.0,
+                            font_size: 35.0,
                             color: Color::WHITE,
                         },
                     )
@@ -294,19 +311,19 @@ fn between_levels_setup(
 /// Spawns UI for customizing a side
 fn spawn_side_customization_ui(
     side_id: SideId,
-    commands: &mut Commands,
+    root_parent: &mut ChildBuilder,
     asset_server: &Res<AssetServer>,
     unlocked_sides: &Res<UnlockedSides>,
     configured_sides: &Res<ConfiguredSides>,
 ) {
-    commands
+    root_parent
         .spawn(NodeBundle {
             style: Style {
                 size: Size::new(Val::Percent(100.0), Val::Auto),
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                align_self: AlignSelf::Center,
+                align_self: AlignSelf::Start,
                 ..default()
             },
             ..default()

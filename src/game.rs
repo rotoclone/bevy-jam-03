@@ -210,7 +210,7 @@ impl LevelSettings {
             start_impulse_range_x: -10.0..10.0,
             start_impulse_range_y: -20.0..-5.0,
             duration: Duration::from_secs(30),
-            sides_to_unlock: vec![SideType::FreezeOthers],
+            sides_to_unlock: vec![SideType::FreezeOthers, SideType::BounceBackwards], //TODO remove one
             min_score: 1,
         }
     }

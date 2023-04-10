@@ -9,6 +9,7 @@ use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_rapier2d::prelude::*;
 
 mod menu;
+use bevy_wasm_window_resize::WindowResizePlugin;
 use menu::*;
 
 mod game;
@@ -70,6 +71,7 @@ fn main() {
             gravity: Vec2::ZERO,
             ..default()
         })
+        .add_plugin(WindowResizePlugin)
         .add_state::<GameState>()
         .add_startup_system(setup)
         .add_plugin(MenuPlugin)

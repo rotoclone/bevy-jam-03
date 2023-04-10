@@ -15,6 +15,14 @@
         document.addEventListener('contextmenu', function (evt) {
             evt.preventDefault();
         })
+
+        // This disables the basic scroll wheel behaviour, theoretically
+        document.addEventListener('wheel', function (evt) {
+            evt.preventDefault();
+        })
+        document.addEventListener('scroll', function (evt) {
+            evt.preventDefault();
+        })
     </script>
 </body>
 

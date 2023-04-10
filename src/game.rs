@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    ops::RangeInclusive,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, ops::RangeInclusive, time::Duration};
 
 use bevy::{
     ecs::{query::ReadOnlyWorldQuery, system::EntityCommands},
@@ -12,6 +8,7 @@ use bevy::{
 use bevy_asset_loader::prelude::*;
 use bevy_rapier2d::prelude::*;
 use bevy_tweening::Lerp;
+use instant::Instant;
 use iyes_progress::{ProgressCounter, ProgressPlugin};
 use rand::prelude::*;
 
@@ -1343,11 +1340,12 @@ fn spawn_balls(
     audio: Res<Audio>,
 ) {
     if balls_query.is_empty()
-        && next_spawn_time.0.duration_since(Instant::now()) > level_settings.max_respite_time
+        && next_spawn_time.0.saturating_duration_since(Instant::now())
+            > level_settings.max_respite_time
     {
         // there are no balls left on screen, so reduce time until next group is spawned
         next_spawn_time.0 = Instant::now() + level_settings.max_respite_time;
-    } else if Instant::now().duration_since(next_spawn_time.0) > Duration::ZERO {
+    } else if Instant::now().saturating_duration_since(next_spawn_time.0) > Duration::ZERO {
         spawn_random_ball(commands, meshes, materials, &level_settings);
 
         audio.play_with_settings(
@@ -1471,7 +1469,8 @@ fn player_movement(
         }
 
         for event in scroll_events.iter() {
-            impulse.torque_impulse = event.y * SCROLL_ROTATE_SPEED * rotate_sensitivity.0;
+            impulse.torque_impulse =
+                event.y.clamp(-1.0, 1.0) * SCROLL_ROTATE_SPEED * rotate_sensitivity.0;
         }
     }
 }
@@ -1762,7 +1761,7 @@ fn handle_duplicate_effect(
 /// Removes the duplication cooldown component from entities once the cooldown expires
 fn remove_duplicate_cooldown(mut commands: Commands, query: Query<(Entity, &DuplicateCooldown)>) {
     for (entity, cooldown) in query.iter() {
-        if Instant::now().duration_since(cooldown.remove_at) > Duration::ZERO {
+        if Instant::now().saturating_duration_since(cooldown.remove_at) > Duration::ZERO {
             commands.entity(entity).remove::<DuplicateCooldown>();
         }
     }
@@ -1855,7 +1854,7 @@ fn unfreeze_entities(
     frozen_query: Query<(Entity, &Frozen), With<RigidBody>>,
 ) {
     for (entity, frozen) in frozen_query.iter() {
-        if Instant::now().duration_since(frozen.unfreeze_at) > Duration::ZERO {
+        if Instant::now().saturating_duration_since(frozen.unfreeze_at) > Duration::ZERO {
             unfreeze_entity(entity, &mut commands);
             commands.entity(entity).insert(frozen.original_velocity);
         }
@@ -1881,7 +1880,7 @@ fn unresize_entities(
     mut resized_query: Query<(Entity, &Resized, &mut Mesh2dHandle, &mut Collider)>,
 ) {
     for (entity, resized, mut mesh, mut collider) in resized_query.iter_mut() {
-        if Instant::now().duration_since(resized.unresize_at) > Duration::ZERO {
+        if Instant::now().saturating_duration_since(resized.unresize_at) > Duration::ZERO {
             *mesh = resized.original_mesh.clone();
             *collider = resized.original_collider.clone();
             commands.entity(entity).remove::<Resized>();
@@ -1913,7 +1912,7 @@ fn animate_score_area_hit(
         };
 
         let animation_progress: f32 = Instant::now()
-            .duration_since(animation.hit_time)
+            .saturating_duration_since(animation.hit_time)
             .as_secs_f32()
             / SCORE_AREA_HIT_ANIMATION_DURATION.as_secs_f32();
         if animation_progress >= 1.0 || animation.score_change == 0 {
@@ -1946,7 +1945,7 @@ fn update_time_display(
     mut time_text_query: Query<&mut Text, With<TimeText>>,
 ) {
     for mut text in time_text_query.iter_mut() {
-        let time_left = end_time.0 - Instant::now();
+        let time_left = end_time.0.saturating_duration_since(Instant::now());
         let seconds_left = time_left.as_secs();
         if seconds_left <= 5 {
             text.sections[0].value = format!("{:.1}", time_left.as_millis() as f32 / 1000.0);
@@ -1990,7 +1989,7 @@ fn update_rotate_sensitivity_display(
 
 /// Ends the level when the timer is up
 fn end_level(mut next_state: ResMut<NextState<GameState>>, end_time: Res<LevelEndTime>) {
-    if Instant::now().duration_since(end_time.0) > Duration::ZERO {
+    if Instant::now().saturating_duration_since(end_time.0) > Duration::ZERO {
         next_state.set(GameState::BetweenLevels);
     }
 }

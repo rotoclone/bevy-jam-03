@@ -1,4 +1,4 @@
-# bevy-jam-03
+# Extreme Bounce Party 2000
 
 For Bevy Jam 3: https://itch.io/jam/bevy-jam-3
 

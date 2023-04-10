@@ -11,3 +11,4 @@
 
 # WASM build
 /out
+out.zip

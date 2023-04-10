@@ -358,6 +358,8 @@ dependencies = [
  "bevy_asset_loader",
  "bevy_rapier2d",
  "bevy_tweening",
+ "bevy_wasm_window_resize",
+ "instant",
  "iyes_progress",
  "rand",
 ]
@@ -1059,6 +1061,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "bevy_wasm_window_resize"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4be1af54f9772f07f91db012d0b99c4c5e95faee7015e53e5d30422fd8778ef3"
+dependencies = [
+ "bevy",
+ "web-sys",
 ]
 
 [[package]]

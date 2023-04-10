@@ -4,5 +4,5 @@ Anyway, you are an up-and-coming bouncer. Right now you just have the most basic
 
 If you get overwhelmed, just remember your training:
 WASD to move
-left and right arrow keys or scroll wheel to rotate
+scroll wheel or left and right arrow keys to rotate
 , and . to adjust rotation sensitivity

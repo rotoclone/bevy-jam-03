@@ -45,7 +45,7 @@ fn menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     TextStyle {
                         font: asset_server.load(TITLE_FONT),
                         font_size: 75.0,
-                        color: Color::WHITE,
+                        color: Color::rgb(0.0, 0.9, 1.0),
                     },
                 )
                 .with_text_alignment(TextAlignment::Center)

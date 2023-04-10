@@ -71,6 +71,7 @@ fn unlock_sides(
 }
 
 /// Sets up the between levels screen
+#[allow(clippy::too_many_arguments)]
 fn between_levels_setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -519,6 +520,7 @@ fn can_side_be_selected(
 type InteractedSideSelectionButtonTuple = (Changed<Interaction>, Without<DisabledButton>);
 
 /// Handles interactions with the side selection buttons.
+#[allow(clippy::too_many_arguments)]
 fn side_selection_buttons_system(
     mut commands: Commands,
     interacted_button_query: Query<

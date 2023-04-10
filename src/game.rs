@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    ops::{Range, RangeInclusive},
+    ops::RangeInclusive,
     time::{Duration, Instant},
 };
 
@@ -13,8 +13,7 @@ use bevy_asset_loader::prelude::*;
 use bevy_rapier2d::prelude::*;
 use bevy_tweening::Lerp;
 use iyes_progress::{ProgressCounter, ProgressPlugin};
-use rand::{distributions::uniform::SampleRange, prelude::*};
-use rand::{distributions::Standard, Rng};
+use rand::prelude::*;
 
 use crate::*;
 
@@ -153,6 +152,7 @@ impl Plugin for GamePlugin {
         .add_system(
             handle_duplicate_effect
                 .after(collisions)
+                .before(handle_extra_points_effect)
                 .run_if(in_state(GameState::Game)),
         )
         .add_system(
@@ -603,7 +603,7 @@ struct ResizeScoreAreasEffect;
 #[derive(Component)]
 struct ExtremeBounceEffect;
 
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
 struct ExtraPointsEffect;
 
 #[derive(Component)]
@@ -632,7 +632,7 @@ enum BallType {
     C,
 }
 
-impl Distribution<BallType> for Standard {
+impl Distribution<BallType> for rand::distributions::Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> BallType {
         match rng.gen_range(0..=2) {
             0 => BallType::A,
@@ -714,6 +714,7 @@ fn display_loading_progress(
 }
 
 /// Sets up the game.
+#[allow(clippy::too_many_arguments)]
 fn game_setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -1261,6 +1262,7 @@ impl Default for SpawnTime {
 }
 
 /// Spawns balls
+#[allow(clippy::too_many_arguments)]
 fn spawn_balls(
     commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
@@ -1420,6 +1422,7 @@ fn adjust_rotate_sensitivity(
 }
 
 /// Handles collisions between objects
+#[allow(clippy::too_many_arguments)]
 fn collisions(
     mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
@@ -1551,10 +1554,15 @@ fn handle_freeze_others_effect(
                 }
             }
         }
-        //TODO sound effect
+        audio.play_with_settings(
+            audio_assets.down.clone(),
+            PlaybackSettings::ONCE.with_volume(1.0 * MASTER_VOLUME),
+        );
         commands.entity(entity).remove::<FreezeOthersEffect>();
     }
 }
+
+type AddedBounceBackwardsEffectTuple = (Added<BounceBackwardsEffect>, Without<SideId>);
 
 /// Deals with entities that have had the bounce backwards effect added
 fn handle_bounce_backwards_effect(
@@ -1566,7 +1574,7 @@ fn handle_bounce_backwards_effect(
             &mut Transform,
             &mut Velocity,
         ),
-        (Added<BounceBackwardsEffect>, Without<SideId>),
+        AddedBounceBackwardsEffectTuple,
     >,
     sides_query: Query<(&SideId, &GlobalTransform)>,
     audio: Res<Audio>,
@@ -1612,36 +1620,43 @@ fn handle_destroy_effect(
     }
 }
 
+type EntityToDuplicateTuple<'a> = (
+    Entity,
+    &'a Ball,
+    &'a Transform,
+    &'a Velocity,
+    Option<&'a ExtraPointsEffect>,
+    Option<&'a DuplicateCooldown>,
+);
+
 /// Deals with entities that have had the duplicate effect added
 fn handle_duplicate_effect(
     mut commands: Commands,
-    query: Query<
-        (
-            Entity,
-            &Ball,
-            &Collider,
-            &Mesh2dHandle,
-            &Transform,
-            &Velocity,
-            Option<&DuplicateCooldown>,
-        ),
-        Added<DuplicateEffect>,
-    >,
+    query: Query<EntityToDuplicateTuple, Added<DuplicateEffect>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     audio: Res<Audio>,
     audio_assets: Res<AudioAssets>,
 ) {
-    for (entity, ball, collider, mesh, transform, velocity, duplicate_cooldown) in query.iter() {
+    for (entity, ball, transform, velocity, extra_points_effect, duplicate_cooldown) in query.iter()
+    {
         if duplicate_cooldown.is_some() {
             commands.entity(entity).remove::<DuplicateEffect>();
             continue;
         }
 
         let impulse = Vec2::new(5.0, 5.0); //TODO make this parallel to hit side
-        spawn_ball(&mut commands, ball.clone(), &mut meshes, &mut materials)
-            .insert(collider.clone())
-            .insert(mesh.clone())
+        let mut new_ball = spawn_ball(
+            &mut commands,
+            Ball {
+                ball_type: ball.ball_type,
+                points: 1,
+            },
+            &mut meshes,
+            &mut materials,
+        );
+
+        new_ball
             .insert(TransformBundle::from(*transform))
             .insert(*velocity)
             .insert(ExternalImpulse {
@@ -1651,6 +1666,10 @@ fn handle_duplicate_effect(
             .insert(DuplicateCooldown {
                 remove_at: Instant::now() + DUPLICATE_COOLDOWN_DURATION,
             });
+
+        if let Some(extra_points_effect) = extra_points_effect {
+            new_ball.insert(*extra_points_effect);
+        }
 
         //TODO sound effect
         commands

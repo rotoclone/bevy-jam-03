@@ -121,7 +121,7 @@ fn between_levels_setup(
                 }),
             );
 
-            if score.0 >= level_settings.min_score {
+            if score.0 >= level_settings.min_score || level_settings.sides_to_unlock.is_empty() {
                 // unlocked sides text
                 parent
                     .spawn(NodeBundle {

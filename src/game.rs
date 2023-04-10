@@ -219,10 +219,22 @@ pub struct AudioAssets {
     hit: Handle<AudioSource>,
     #[asset(path = "sounds/up.ogg")]
     up: Handle<AudioSource>,
+    #[asset(path = "sounds/up_more.ogg")]
+    up_more: Handle<AudioSource>,
     #[asset(path = "sounds/down.ogg")]
     down: Handle<AudioSource>,
     #[asset(path = "sounds/launch.ogg")]
     launch: Handle<AudioSource>,
+    #[asset(path = "sounds/boop.ogg")]
+    boop: Handle<AudioSource>,
+    #[asset(path = "sounds/duplicate_2.ogg")]
+    duplicate: Handle<AudioSource>,
+    #[asset(path = "sounds/explode.ogg")]
+    explode: Handle<AudioSource>,
+    #[asset(path = "sounds/extra_points.ogg")]
+    extra_points: Handle<AudioSource>,
+    #[asset(path = "sounds/resize.ogg")]
+    resize: Handle<AudioSource>,
     #[asset(path = "sounds/good_2.ogg")]
     good: Handle<AudioSource>,
     #[asset(path = "sounds/bad.ogg")]
@@ -318,7 +330,7 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(7),
                 max_respite_time: Duration::from_secs(2),
                 time_between_spawns_in_group: Duration::from_millis(500),
-                balls_per_group: 5,
+                balls_per_group: 4,
                 spawn_points: SpawnPoint::four_sides(7.0, 27.0),
                 duration: Duration::from_secs(64),
                 sides_to_unlock: vec![SideType::Duplicate, SideType::ExtremeBounce],
@@ -329,7 +341,7 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(7),
                 max_respite_time: Duration::from_secs(1),
                 time_between_spawns_in_group: Duration::from_millis(500),
-                balls_per_group: 6,
+                balls_per_group: 5,
                 spawn_points: SpawnPoint::four_sides(8.0, 29.0),
                 duration: Duration::from_secs(64),
                 sides_to_unlock: vec![],
@@ -340,7 +352,7 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(7),
                 max_respite_time: Duration::from_secs(1),
                 time_between_spawns_in_group: Duration::from_millis(500),
-                balls_per_group: 7,
+                balls_per_group: 6,
                 spawn_points: SpawnPoint::four_sides(9.0, 30.0),
                 duration: Duration::from_secs(64),
                 sides_to_unlock: vec![],
@@ -352,10 +364,7 @@ impl LevelSettings {
                 max_respite_time: self.max_respite_time,
                 time_between_spawns_in_group: self.time_between_spawns_in_group,
                 balls_per_group: self.balls_per_group + 1,
-                spawn_points: SpawnPoint::four_sides(
-                    self.spawn_points[0].min_impulse,
-                    self.spawn_points[0].max_impulse + 0.5,
-                ),
+                spawn_points: self.spawn_points.clone(),
                 duration: self.duration,
                 sides_to_unlock: vec![],
                 min_score: self.min_score + 3,
@@ -364,6 +373,7 @@ impl LevelSettings {
     }
 }
 
+#[derive(Clone)]
 struct SpawnPoint {
     /// Range of possible X coordinates
     start_position_range_x: RangeInclusive<f32>,
@@ -1599,7 +1609,10 @@ fn handle_bounce_backwards_effect(
         transform.translation =
             opposite_side_transform.translation() + (direction * BOUNCE_BACKWARDS_DISTANCE);
 
-        //TODO sound effect
+        audio.play_with_settings(
+            audio_assets.boop.clone(),
+            PlaybackSettings::ONCE.with_volume(0.33 * MASTER_VOLUME),
+        );
         commands.entity(entity).remove::<BounceBackwardsEffect>();
     }
 }
@@ -1615,7 +1628,10 @@ fn handle_destroy_effect(
     for entity in query.iter() {
         entities_to_despawn.0.push(entity);
 
-        //TODO sound effect
+        audio.play_with_settings(
+            audio_assets.explode.clone(),
+            PlaybackSettings::ONCE.with_volume(0.33 * MASTER_VOLUME),
+        );
         commands.entity(entity).remove::<DestroyEffect>();
     }
 }
@@ -1671,7 +1687,11 @@ fn handle_duplicate_effect(
             new_ball.insert(*extra_points_effect);
         }
 
-        //TODO sound effect
+        audio.play_with_settings(
+            audio_assets.duplicate.clone(),
+            PlaybackSettings::ONCE.with_volume(0.4 * MASTER_VOLUME),
+        );
+
         commands
             .entity(entity)
             .remove::<DuplicateEffect>()
@@ -1723,7 +1743,11 @@ fn handle_resize_score_areas_effect(
             }
         }
 
-        //TODO sound effect
+        audio.play_with_settings(
+            audio_assets.resize.clone(),
+            PlaybackSettings::ONCE.with_volume(0.33 * MASTER_VOLUME),
+        );
+
         commands
             .entity(ball_entity)
             .remove::<ResizeScoreAreasEffect>();
@@ -1738,10 +1762,9 @@ fn handle_extreme_bounce_effect(
     audio_assets: Res<AudioAssets>,
 ) {
     for entity in query.iter() {
-        //TODO unique sound
         audio.play_with_settings(
-            audio_assets.up.clone(),
-            PlaybackSettings::ONCE.with_volume(0.75 * MASTER_VOLUME),
+            audio_assets.up_more.clone(),
+            PlaybackSettings::ONCE.with_volume(0.33 * MASTER_VOLUME),
         );
         commands.entity(entity).remove::<ExtremeBounceEffect>();
     }
@@ -1761,7 +1784,10 @@ fn handle_extra_points_effect(
             .into();
         *collider = Collider::ball(EXTRA_POINT_BALL_SIZE);
 
-        //TODO sound effect
+        audio.play_with_settings(
+            audio_assets.extra_points.clone(),
+            PlaybackSettings::ONCE.with_volume(0.66 * MASTER_VOLUME),
+        );
     }
 }
 

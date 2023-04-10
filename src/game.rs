@@ -24,6 +24,7 @@ const ROTATE_COUNTERCLOCKWISE_KEY: KeyCode = KeyCode::Left;
 
 const INCREASE_ROTATE_SENSITIVITY_KEY: KeyCode = KeyCode::Period;
 const DECREASE_ROTATE_SENSITIVITY_KEY: KeyCode = KeyCode::Comma;
+const COLOR_BLIND_MODE_KEY: KeyCode = KeyCode::M;
 
 const ROTATE_SENSITIVITY_ADJUST_AMOUNT: f32 = 0.2;
 
@@ -107,8 +108,10 @@ impl Plugin for GamePlugin {
         .insert_resource(LevelSettings::first_level())
         .insert_resource(EntitiesToDespawn(Vec::new()))
         .insert_resource(RotateSensitivity(1.0))
+        .insert_resource(ColorBlindMode(false))
         .add_system(update_time_display.run_if(in_state(GameState::Game)))
         .add_system(spawn_balls.run_if(in_state(GameState::Game)))
+        .add_system(toggle_color_blind_mode)
         .add_system(
             adjust_rotate_sensitivity
                 .before(player_movement)
@@ -483,6 +486,9 @@ pub struct Score(pub i32);
 #[derive(Resource)]
 struct LevelEndTime(Instant);
 
+#[derive(Resource)]
+struct ColorBlindMode(bool);
+
 #[derive(Component)]
 struct LoadingComponent;
 
@@ -686,12 +692,21 @@ impl BallType {
 
 impl BallType {
     /// Gets the color that corresponds to this ball type
-    fn color(&self) -> Color {
-        match self {
-            BallType::A => Color::ORANGE_RED,
-            BallType::B => Color::LIME_GREEN,
-            BallType::C => Color::YELLOW,
-            BallType::D => Color::rgb(0.0, 0.75, 1.0),
+    fn color(&self, color_blind_mode: &ColorBlindMode) -> Color {
+        if color_blind_mode.0 {
+            match self {
+                BallType::A => Color::rgb(1.0, 0.36, 0.58),
+                BallType::B => Color::rgb(0.6, 0.88, 0.0),
+                BallType::C => Color::YELLOW,
+                BallType::D => Color::rgb(0.0, 0.75, 1.0),
+            }
+        } else {
+            match self {
+                BallType::A => Color::ORANGE_RED,
+                BallType::B => Color::LIME_GREEN,
+                BallType::C => Color::YELLOW,
+                BallType::D => Color::rgb(0.0, 0.75, 1.0),
+            }
         }
     }
 }
@@ -766,6 +781,7 @@ fn game_setup(
     rotate_sensitivity: Res<RotateSensitivity>,
     level_settings: Res<LevelSettings>,
     configured_sides: Res<ConfiguredSides>,
+    color_blind_mode: Res<ColorBlindMode>,
 ) {
     spawn_player_shape(
         &mut commands,
@@ -783,9 +799,10 @@ fn game_setup(
             mesh: meshes
                 .add(shape::Circle::new(SCORE_AREA_SIZE).into())
                 .into(),
-            material: materials.add(ColorMaterial::from(color_for_score_area(&ScoreArea(
-                BallType::A,
-            )))),
+            material: materials.add(ColorMaterial::from(color_for_score_area(
+                &ScoreArea(BallType::A),
+                &color_blind_mode,
+            ))),
             ..default()
         })
         .insert(Collider::ball(SCORE_AREA_SIZE))
@@ -804,9 +821,10 @@ fn game_setup(
                 mesh: meshes
                     .add(shape::Circle::new(SCORE_AREA_SIZE).into())
                     .into(),
-                material: materials.add(ColorMaterial::from(color_for_score_area(&ScoreArea(
-                    BallType::B,
-                )))),
+                material: materials.add(ColorMaterial::from(color_for_score_area(
+                    &ScoreArea(BallType::B),
+                    &color_blind_mode,
+                ))),
                 ..default()
             })
             .insert(Collider::ball(SCORE_AREA_SIZE))
@@ -825,9 +843,10 @@ fn game_setup(
             mesh: meshes
                 .add(shape::Circle::new(SCORE_AREA_SIZE).into())
                 .into(),
-            material: materials.add(ColorMaterial::from(color_for_score_area(&ScoreArea(
-                BallType::C,
-            )))),
+            material: materials.add(ColorMaterial::from(color_for_score_area(
+                &ScoreArea(BallType::C),
+                &color_blind_mode,
+            ))),
             ..default()
         })
         .insert(Collider::ball(SCORE_AREA_SIZE))
@@ -846,9 +865,10 @@ fn game_setup(
                 mesh: meshes
                     .add(shape::Circle::new(SCORE_AREA_SIZE).into())
                     .into(),
-                material: materials.add(ColorMaterial::from(color_for_score_area(&ScoreArea(
-                    BallType::D,
-                )))),
+                material: materials.add(ColorMaterial::from(color_for_score_area(
+                    &ScoreArea(BallType::D),
+                    &color_blind_mode,
+                ))),
                 ..default()
             })
             .insert(Collider::ball(SCORE_AREA_SIZE))
@@ -1081,8 +1101,8 @@ fn game_setup(
 }
 
 /// Determines what color the provided score area should be
-fn color_for_score_area(score_area: &ScoreArea) -> Color {
-    let mut color = score_area.0.color();
+fn color_for_score_area(score_area: &ScoreArea, color_blind_mode: &ColorBlindMode) -> Color {
+    let mut color = score_area.0.color(color_blind_mode);
     color.set_a(0.1);
 
     color
@@ -1335,6 +1355,7 @@ fn spawn_balls(
     materials: ResMut<Assets<ColorMaterial>>,
     level_settings: Res<LevelSettings>,
     balls_query: Query<&Ball>,
+    color_blind_mode: Res<ColorBlindMode>,
     mut next_spawn_time: Local<SpawnTime>,
     mut balls_spawned_in_group: Local<u32>,
     audio_assets: Res<AudioAssets>,
@@ -1347,7 +1368,13 @@ fn spawn_balls(
         // there are no balls left on screen, so reduce time until next group is spawned
         next_spawn_time.0 = Instant::now() + level_settings.max_respite_time;
     } else if Instant::now().saturating_duration_since(next_spawn_time.0) > Duration::ZERO {
-        spawn_random_ball(commands, meshes, materials, &level_settings);
+        spawn_random_ball(
+            commands,
+            &color_blind_mode,
+            meshes,
+            materials,
+            &level_settings,
+        );
 
         audio.play_with_settings(
             audio_assets.launch.clone(),
@@ -1368,6 +1395,7 @@ fn spawn_balls(
 /// Spawns a random ball at a random point with a random initial impulse
 fn spawn_random_ball(
     mut commands: Commands,
+    color_blind_mode: &ColorBlindMode,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     level_settings: &LevelSettings,
@@ -1388,6 +1416,7 @@ fn spawn_random_ball(
             ball_type,
             points: 1,
         },
+        color_blind_mode,
         &mut meshes,
         &mut materials,
     )
@@ -1406,8 +1435,9 @@ fn spawn_random_ball(
 fn spawn_ball<'w, 's, 'a>(
     commands: &'a mut Commands<'w, 's>,
     ball_component: Ball,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<ColorMaterial>>,
+    color_blind_mode: &ColorBlindMode,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
 ) -> EntityCommands<'w, 's, 'a> {
     let mut ball = commands.spawn(RigidBody::Dynamic);
 
@@ -1419,7 +1449,9 @@ fn spawn_ball<'w, 's, 'a>(
         ))
         .insert(MaterialMesh2dBundle {
             mesh: meshes.add(shape::Circle::new(BALL_SIZE).into()).into(),
-            material: materials.add(ColorMaterial::from(ball_component.ball_type.color())),
+            material: materials.add(ColorMaterial::from(
+                ball_component.ball_type.color(color_blind_mode),
+            )),
             ..default()
         })
         .insert(Restitution {
@@ -1476,6 +1508,7 @@ fn player_movement(
     }
 }
 
+/// Adjusts the rotation sensitivity
 fn adjust_rotate_sensitivity(
     keycode: Res<Input<KeyCode>>,
     mut rotate_sensitivity: ResMut<RotateSensitivity>,
@@ -1486,6 +1519,37 @@ fn adjust_rotate_sensitivity(
 
     if keycode.just_pressed(DECREASE_ROTATE_SENSITIVITY_KEY) {
         rotate_sensitivity.0 -= ROTATE_SENSITIVITY_ADJUST_AMOUNT;
+    }
+}
+
+/// Toggles color-blind mode
+fn toggle_color_blind_mode(
+    keycode: Res<Input<KeyCode>>,
+    mut color_blind_mode: ResMut<ColorBlindMode>,
+    balls_query: Query<(&Ball, &Handle<ColorMaterial>)>,
+    score_areas_query: Query<(&ScoreArea, &Handle<ColorMaterial>)>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    if keycode.just_pressed(COLOR_BLIND_MODE_KEY) {
+        color_blind_mode.0 = !color_blind_mode.0;
+
+        // update ball colors
+        for (ball, material_handle) in balls_query.iter() {
+            let material = materials
+                .get_mut(material_handle)
+                .expect("material should exist");
+
+            material.color = ball.ball_type.color(&color_blind_mode);
+        }
+
+        // update score area colors
+        for (score_area, material_handle) in score_areas_query.iter() {
+            let material = materials
+                .get_mut(material_handle)
+                .expect("material should exist");
+
+            material.color = color_for_score_area(score_area, &color_blind_mode);
+        }
     }
 }
 
@@ -1718,6 +1782,7 @@ type EntityToDuplicateTuple<'a> = (
 fn handle_duplicate_effect(
     mut commands: Commands,
     query: Query<EntityToDuplicateTuple, Added<DuplicateEffect>>,
+    color_blind_mode: Res<ColorBlindMode>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     audio: Res<Audio>,
@@ -1737,6 +1802,7 @@ fn handle_duplicate_effect(
                 ball_type: ball.ball_type,
                 points: 1,
             },
+            &color_blind_mode,
             &mut meshes,
             &mut materials,
         );
@@ -1910,13 +1976,14 @@ fn animate_score_area_hit(
         &AnimateScoreAreaHit,
         &Handle<ColorMaterial>,
     )>,
+    color_blind_mode: Res<ColorBlindMode>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     for (entity, score_area, animation, material_handle) in query.iter() {
         let material = materials
             .get_mut(material_handle)
             .expect("material should exist");
-        let base_color = color_for_score_area(score_area);
+        let base_color = color_for_score_area(score_area, &color_blind_mode);
         let start_animation_channel = if animation.score_change > 0 { 1.0 } else { 0.1 };
         let start_animation_alpha_channel = if animation.score_change.abs() == 1 {
             0.5

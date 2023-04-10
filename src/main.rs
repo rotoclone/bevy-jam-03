@@ -1,5 +1,4 @@
 use bevy::{
-    core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     input::common_conditions::input_toggle_active,
     prelude::*,
@@ -94,6 +93,7 @@ fn main() {
 }
 
 fn setup(mut commands: Commands) {
+    /* bloom would be nice
     commands
         .spawn((
             Camera2dBundle {
@@ -110,6 +110,9 @@ fn setup(mut commands: Commands) {
             }, // 3. Enable bloom for the camera
         ))
         .insert(MainCamera);
+    */
+    // but bloom performance is real bad on some machines
+    commands.spawn(Camera2dBundle::default()).insert(MainCamera);
 }
 
 /// Adjusts the camera zoom when the window is resized

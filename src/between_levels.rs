@@ -341,7 +341,7 @@ fn spawn_side_customization_ui(
                     format!("Side {}", side_id.0 + 1),
                     TextStyle {
                         font: asset_server.load(MAIN_FONT),
-                        font_size: 25.0,
+                        font_size: 27.0,
                         color: Color::WHITE,
                     },
                 )
@@ -405,7 +405,7 @@ fn spawn_side_customization_ui(
                             side_type.name(),
                             TextStyle {
                                 font: asset_server.load(MAIN_FONT),
-                                font_size: 20.0,
+                                font_size: 22.0,
                                 color: button_text_color,
                             },
                         ))
@@ -455,7 +455,7 @@ fn spawn_side_customization_ui(
                         configured_sides.get(&side_id).description(),
                         TextStyle {
                             font: asset_server.load(MAIN_FONT),
-                            font_size: 25.0,
+                            font_size: 27.0,
                             color: Color::WHITE,
                         },
                     )

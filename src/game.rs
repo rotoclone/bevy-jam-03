@@ -66,7 +66,7 @@ const FREEZE_DURATION: Duration = Duration::from_secs(3);
 const BOUNCE_BACKWARDS_VELOCITY: f32 = 100.0;
 const BOUNCE_BACKWARDS_DISTANCE: f32 = BALL_SIZE + 1.0;
 const SCORE_AREA_RESIZE_DURATION: Duration = Duration::from_secs(5);
-const SCORE_AREA_RESIZE_AMOUNT: f32 = 40.0;
+const SCORE_AREA_RESIZE_AMOUNT: f32 = 50.0;
 const DUPLICATE_COOLDOWN_DURATION: Duration = Duration::from_millis(1000);
 
 const TIMER_FONT_SIZE: f32 = 40.0;
@@ -289,7 +289,7 @@ impl LevelSettings {
                 start_impulse_range_x: -10.0..10.0,
                 start_impulse_range_y: -21.0..-5.0,
                 duration: Duration::from_secs(40),
-                sides_to_unlock: vec![SideType::ResizeScoreAreas],
+                sides_to_unlock: vec![SideType::BounceBackwards],
                 min_score: 1,
             },
             2 => LevelSettings {
@@ -300,7 +300,7 @@ impl LevelSettings {
                 start_impulse_range_x: -10.0..10.0,
                 start_impulse_range_y: -23.0..-5.0,
                 duration: Duration::from_secs(50),
-                sides_to_unlock: vec![SideType::BounceBackwards],
+                sides_to_unlock: vec![SideType::ResizeScoreAreas],
                 min_score: 1,
             },
             3 => LevelSettings {

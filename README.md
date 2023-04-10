@@ -2,7 +2,7 @@
 
 For Bevy Jam 3: https://itch.io/jam/bevy-jam-3
 
-Play it on itch.io: TODO add link
+Play it on itch.io: https://the-nacho.itch.io/extreme-bounce-party-2000
 
 Licensed under the dual MIT / Apache-2.0 license
 

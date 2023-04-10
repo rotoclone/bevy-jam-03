@@ -101,7 +101,7 @@ impl Plugin for GamePlugin {
         .insert_resource(ConfiguredSides(
             [
                 (SideId(0), SideType::SpeedUp),
-                (SideId(1), SideType::ExtremeBounce), //TODO
+                (SideId(1), SideType::NothingSpecial),
                 (SideId(2), SideType::NothingSpecial),
                 (SideId(3), SideType::NothingSpecial),
             ]
@@ -263,6 +263,10 @@ pub struct LevelSettings {
     time_between_spawns_in_group: Duration,
     /// Number of balls spawned per group
     balls_per_group: u32,
+    /// Whether type B balls will spawn
+    type_b_active: bool,
+    /// Whether type D balls will spawn
+    type_d_active: bool,
     /// Settings for where to spawn balls
     spawn_points: Vec<SpawnPoint>,
     /// The time limit for the level
@@ -282,6 +286,8 @@ impl LevelSettings {
             max_respite_time: Duration::from_secs(2),
             time_between_spawns_in_group: Duration::from_millis(500),
             balls_per_group: 3,
+            type_b_active: false,
+            type_d_active: false,
             spawn_points: SpawnPoint::four_sides(5.0, 20.0),
             duration: Duration::from_secs(32),
             sides_to_unlock: vec![SideType::FreezeOthers],
@@ -294,11 +300,13 @@ impl LevelSettings {
         match self.id {
             1 => LevelSettings {
                 id: 2,
-                time_between_groups: Duration::from_secs(8),
+                time_between_groups: Duration::from_secs(9),
                 max_respite_time: Duration::from_secs(2),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 3,
-                spawn_points: SpawnPoint::four_sides(5.0, 21.0),
+                type_b_active: true,
+                type_d_active: false,
+                spawn_points: SpawnPoint::four_sides(5.0, 20.0),
                 duration: Duration::from_secs(40),
                 sides_to_unlock: vec![SideType::BounceBackwards],
                 min_score: 1,
@@ -308,8 +316,10 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(8),
                 max_respite_time: Duration::from_secs(2),
                 time_between_spawns_in_group: Duration::from_millis(500),
-                balls_per_group: 4,
-                spawn_points: SpawnPoint::four_sides(5.0, 23.0),
+                balls_per_group: 3,
+                type_b_active: true,
+                type_d_active: true,
+                spawn_points: SpawnPoint::four_sides(5.0, 20.0),
                 duration: Duration::from_secs(50),
                 sides_to_unlock: vec![SideType::ResizeScoreAreas],
                 min_score: 1,
@@ -320,7 +330,9 @@ impl LevelSettings {
                 max_respite_time: Duration::from_secs(2),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 4,
-                spawn_points: SpawnPoint::four_sides(6.0, 25.0),
+                type_b_active: true,
+                type_d_active: true,
+                spawn_points: SpawnPoint::four_sides(5.0, 22.0),
                 duration: Duration::from_secs(64),
                 sides_to_unlock: vec![SideType::Destroy, SideType::ExtraPoints],
                 min_score: 3,
@@ -331,7 +343,9 @@ impl LevelSettings {
                 max_respite_time: Duration::from_secs(2),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 4,
-                spawn_points: SpawnPoint::four_sides(7.0, 27.0),
+                type_b_active: true,
+                type_d_active: true,
+                spawn_points: SpawnPoint::four_sides(5.0, 25.0),
                 duration: Duration::from_secs(64),
                 sides_to_unlock: vec![SideType::Duplicate, SideType::ExtremeBounce],
                 min_score: 5,
@@ -342,7 +356,9 @@ impl LevelSettings {
                 max_respite_time: Duration::from_secs(1),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 5,
-                spawn_points: SpawnPoint::four_sides(8.0, 29.0),
+                type_b_active: true,
+                type_d_active: true,
+                spawn_points: SpawnPoint::four_sides(6.0, 27.0),
                 duration: Duration::from_secs(64),
                 sides_to_unlock: vec![],
                 min_score: 7,
@@ -352,8 +368,10 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(7),
                 max_respite_time: Duration::from_secs(1),
                 time_between_spawns_in_group: Duration::from_millis(500),
-                balls_per_group: 6,
-                spawn_points: SpawnPoint::four_sides(9.0, 30.0),
+                balls_per_group: 5,
+                type_b_active: true,
+                type_d_active: true,
+                spawn_points: SpawnPoint::four_sides(7.0, 30.0),
                 duration: Duration::from_secs(64),
                 sides_to_unlock: vec![],
                 min_score: 10,
@@ -364,6 +382,8 @@ impl LevelSettings {
                 max_respite_time: self.max_respite_time,
                 time_between_spawns_in_group: self.time_between_spawns_in_group,
                 balls_per_group: self.balls_per_group + 1,
+                type_b_active: true,
+                type_d_active: true,
                 spawn_points: self.spawn_points.clone(),
                 duration: self.duration,
                 sides_to_unlock: vec![],
@@ -383,10 +403,6 @@ struct SpawnPoint {
     start_impulse_range_x: RangeInclusive<f32>,
     /// The range of possible initial impulses in the Y direction on spawned balls
     start_impulse_range_y: RangeInclusive<f32>,
-    /// The minimum impulse spawned balls will get towards the center
-    min_impulse: f32,
-    /// The maximum impulse spawned balls will get towards the center
-    max_impulse: f32,
 }
 
 impl SpawnPoint {
@@ -398,8 +414,6 @@ impl SpawnPoint {
                 ..=(PLAY_AREA_RADIUS - BALL_SIZE - 1.0),
             start_impulse_range_x: -10.0..=10.0,
             start_impulse_range_y: -max_impulse..=-min_impulse,
-            min_impulse,
-            max_impulse,
         }
     }
 
@@ -411,8 +425,6 @@ impl SpawnPoint {
                 ..=(-PLAY_AREA_RADIUS + BALL_SIZE + 1.0),
             start_impulse_range_x: -10.0..=10.0,
             start_impulse_range_y: min_impulse..=max_impulse,
-            min_impulse,
-            max_impulse,
         }
     }
 
@@ -424,8 +436,6 @@ impl SpawnPoint {
             start_position_range_y: (-PLAY_AREA_RADIUS / 3.0)..=(PLAY_AREA_RADIUS / 3.0),
             start_impulse_range_x: min_impulse..=max_impulse,
             start_impulse_range_y: -10.0..=10.0,
-            min_impulse,
-            max_impulse,
         }
     }
 
@@ -437,8 +447,6 @@ impl SpawnPoint {
             start_position_range_y: (-PLAY_AREA_RADIUS / 3.0)..=(PLAY_AREA_RADIUS / 3.0),
             start_impulse_range_x: -max_impulse..=-min_impulse,
             start_impulse_range_y: -10.0..=10.0,
-            min_impulse,
-            max_impulse,
         }
     }
 
@@ -570,7 +578,7 @@ impl SideType {
             SideType::FreezeOthers => {
                 "Temporarily freezes all balls other than the one that hit it"
             }
-            SideType::BounceBackwards => "Bounces balls backwards out the other side of you",
+            SideType::BounceBackwards => "Bounces balls backwards out the other side",
             SideType::Destroy => "Destroys balls that hit it",
             SideType::Duplicate => "Duplicates balls that hit it",
             SideType::ResizeScoreAreas => "Temporarily increases the size of the score area matching the ball that hit it, and decreases the size of other score areas",
@@ -640,15 +648,40 @@ enum BallType {
     A,
     B,
     C,
+    D,
 }
 
-impl Distribution<BallType> for rand::distributions::Standard {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> BallType {
-        match rng.gen_range(0..=2) {
-            0 => BallType::A,
-            1 => BallType::B,
-            2 => BallType::C,
-            _ => unreachable!(),
+impl BallType {
+    /// Generates a random ball type
+    fn random<R: Rng>(level_settings: &LevelSettings, rng: &mut R) -> BallType {
+        if level_settings.type_b_active && level_settings.type_d_active {
+            match rng.gen_range(0..=3) {
+                0 => BallType::A,
+                1 => BallType::B,
+                2 => BallType::C,
+                3 => BallType::D,
+                _ => unreachable!(),
+            }
+        } else if level_settings.type_b_active {
+            match rng.gen_range(0..=2) {
+                0 => BallType::A,
+                1 => BallType::B,
+                2 => BallType::C,
+                _ => unreachable!(),
+            }
+        } else if level_settings.type_d_active {
+            match rng.gen_range(0..=2) {
+                0 => BallType::A,
+                1 => BallType::C,
+                2 => BallType::D,
+                _ => unreachable!(),
+            }
+        } else {
+            match rng.gen_range(0..=1) {
+                0 => BallType::A,
+                1 => BallType::C,
+                _ => unreachable!(),
+            }
         }
     }
 }
@@ -660,6 +693,7 @@ impl BallType {
             BallType::A => Color::ORANGE_RED,
             BallType::B => Color::LIME_GREEN,
             BallType::C => Color::YELLOW,
+            BallType::D => Color::rgb(0.0, 0.75, 1.0),
         }
     }
 }
@@ -766,25 +800,27 @@ fn game_setup(
         .insert(GameComponent)
         .insert(ScoreArea(BallType::A));
 
-    commands
-        .spawn(MaterialMesh2dBundle {
-            mesh: meshes
-                .add(shape::Circle::new(SCORE_AREA_SIZE).into())
-                .into(),
-            material: materials.add(ColorMaterial::from(color_for_score_area(&ScoreArea(
-                BallType::B,
-            )))),
-            ..default()
-        })
-        .insert(Collider::ball(SCORE_AREA_SIZE))
-        .insert(Sensor)
-        .insert(Transform::from_translation(Vec3::new(
-            PLAY_AREA_RADIUS,
-            PLAY_AREA_RADIUS,
-            0.0,
-        )))
-        .insert(GameComponent)
-        .insert(ScoreArea(BallType::B));
+    if level_settings.type_b_active {
+        commands
+            .spawn(MaterialMesh2dBundle {
+                mesh: meshes
+                    .add(shape::Circle::new(SCORE_AREA_SIZE).into())
+                    .into(),
+                material: materials.add(ColorMaterial::from(color_for_score_area(&ScoreArea(
+                    BallType::B,
+                )))),
+                ..default()
+            })
+            .insert(Collider::ball(SCORE_AREA_SIZE))
+            .insert(Sensor)
+            .insert(Transform::from_translation(Vec3::new(
+                PLAY_AREA_RADIUS,
+                PLAY_AREA_RADIUS,
+                0.0,
+            )))
+            .insert(GameComponent)
+            .insert(ScoreArea(BallType::B));
+    }
 
     commands
         .spawn(MaterialMesh2dBundle {
@@ -805,6 +841,28 @@ fn game_setup(
         )))
         .insert(GameComponent)
         .insert(ScoreArea(BallType::C));
+
+    if level_settings.type_d_active {
+        commands
+            .spawn(MaterialMesh2dBundle {
+                mesh: meshes
+                    .add(shape::Circle::new(SCORE_AREA_SIZE).into())
+                    .into(),
+                material: materials.add(ColorMaterial::from(color_for_score_area(&ScoreArea(
+                    BallType::D,
+                )))),
+                ..default()
+            })
+            .insert(Collider::ball(SCORE_AREA_SIZE))
+            .insert(Sensor)
+            .insert(Transform::from_translation(Vec3::new(
+                -PLAY_AREA_RADIUS,
+                -PLAY_AREA_RADIUS,
+                0.0,
+            )))
+            .insert(GameComponent)
+            .insert(ScoreArea(BallType::D));
+    }
 
     // left wall
     commands
@@ -1229,7 +1287,7 @@ fn spawn_side<'w, 's, 'a>(
                 },
                 ..default()
             })
-            .insert(Restitution::coefficient(0.33)),
+            .insert(Restitution::coefficient(1.0)),
         SideType::ExtremeBounce => side
             .insert(SpriteBundle {
                 texture: image_assets.extra_bouncy_side.clone(),
@@ -1316,7 +1374,7 @@ fn spawn_random_ball(
     level_settings: &LevelSettings,
 ) {
     let mut rng = rand::thread_rng();
-    let ball_type = rng.gen::<BallType>();
+    let ball_type = BallType::random(level_settings, &mut rng);
     let spawn_point = level_settings
         .spawn_points
         .choose(&mut rng)

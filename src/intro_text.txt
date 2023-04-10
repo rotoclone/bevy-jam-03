@@ -1,0 +1,8 @@
+It is the futuristic year of 2000. Due to the way that things are, it is now a popular thing to use a square to bounce colored balls into matching score areas. This activity is known as "bouncing", and those who partake in it are "bouncers". You may think it would be confusing to use the word "bouncers" for that, but everyone has forgotten about the other kind of bouncer because no one goes to clubs anymore, on account of all the bouncing they're doing. Also all the clubs were destroyed in the robot uprising of 1997.
+
+Anyway, you are an up-and-coming bouncer. Right now you just have the most basic square, with the most basic n00b sides. If you're good enough, you'll gain access to a bunch of cool fancy sides to put on your square, which you can use to impress your friends and scare away the net demons who try to hijack your brain functions and trap you in cyberspace.
+
+If you get overwhelmed, just remember your training:
+WASD to move
+left and right arrow keys or scroll wheel to rotate
+, and . to adjust rotation sensitivity

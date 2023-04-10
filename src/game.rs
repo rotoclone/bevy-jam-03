@@ -61,7 +61,7 @@ const FREEZE_DURATION: Duration = Duration::from_secs(3);
 const BOUNCE_BACKWARDS_VELOCITY: f32 = 100.0;
 const BOUNCE_BACKWARDS_DISTANCE: f32 = BALL_SIZE + 1.0;
 const SCORE_AREA_RESIZE_DURATION: Duration = Duration::from_secs(5);
-const SCORE_AREA_RESIZE_AMOUNT: f32 = 50.0;
+const SCORE_AREA_RESIZE_AMOUNT: f32 = 40.0;
 const DUPLICATE_COOLDOWN_DURATION: Duration = Duration::from_millis(1000);
 
 const TIMER_FONT_SIZE: f32 = 40.0;
@@ -578,7 +578,7 @@ impl SideType {
             SideType::BounceBackwards => "Bounces balls backwards out the other side",
             SideType::Destroy => "Destroys balls that hit it",
             SideType::Duplicate => "Duplicates balls that hit it",
-            SideType::ResizeScoreAreas => "Temporarily increases the size of the score area matching the ball that hit it, and decreases the size of other score areas",
+            SideType::ResizeScoreAreas => "Temporarily increases the size of the score area matching the ball that hit it, decreases the size of other score areas, and prevents incorrect scores from occurring",
             SideType::ExtremeBounce => "Contains the maximum bounciness allowed by the FDA",
             SideType::ExtraPoints => "Makes balls that hit it worth 1 additional point (don't get too excited, the effect can only be applied once per ball)"
         }
@@ -632,6 +632,7 @@ struct Resized {
     unresize_at: Instant,
     original_mesh: Mesh2dHandle,
     original_collider: Collider,
+    penalty_disabled: bool,
 }
 
 #[derive(Component, Clone)]
@@ -1284,7 +1285,7 @@ fn spawn_side<'w, 's, 'a>(
                 },
                 ..default()
             })
-            .insert(Restitution::coefficient(1.0)),
+            .insert(Restitution::coefficient(0.5)),
         SideType::ExtremeBounce => side
             .insert(SpriteBundle {
                 texture: image_assets.extra_bouncy_side.clone(),
@@ -1498,7 +1499,7 @@ fn collisions(
     audio: Res<Audio>,
     audio_assets: Res<AudioAssets>,
     balls_query: Query<&Ball>,
-    score_areas_query: Query<&ScoreArea>,
+    score_areas_query: Query<(&ScoreArea, Option<&Resized>)>,
     sides_query: Query<(&SideType, &SideId)>,
 ) {
     for event in collision_events.iter() {
@@ -1511,9 +1512,12 @@ fn collisions(
                     continue;
                 }
                 unfreeze_entity(ball_entity, &mut commands);
-                if let Some((score_area, score_area_entity)) =
-                    get_from_either::<ScoreArea, &ScoreArea>(*a, *b, &score_areas_query)
-                {
+                if let Some((score_area, score_area_entity)) = get_from_either::<
+                    ScoreArea,
+                    (&ScoreArea, Option<&Resized>),
+                >(
+                    *a, *b, &score_areas_query
+                ) {
                     // a ball has hit a score area
                     if ball.ball_type == score_area.0 {
                         score.0 += i32::from(ball.points);
@@ -1528,6 +1532,14 @@ fn collisions(
                             PlaybackSettings::ONCE.with_volume(GOOD_SCORE_VOLUME * MASTER_VOLUME),
                         );
                     } else {
+                        if let Ok(resized) =
+                            score_areas_query.get_component::<Resized>(score_area_entity)
+                        {
+                            if resized.penalty_disabled {
+                                // this score area doesn't penalize incorrect hits right now
+                                continue;
+                            }
+                        }
                         score.0 -= i32::from(ball.points);
                         commands
                             .entity(score_area_entity)
@@ -1785,6 +1797,7 @@ fn handle_resize_score_areas_effect(
                     .add(shape::Circle::new(SCORE_AREA_SIZE).into())
                     .into(),
                 original_collider: Collider::ball(SCORE_AREA_SIZE),
+                penalty_disabled: true,
             });
 
             if ball.ball_type == score_area.0 {

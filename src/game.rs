@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    ops::Range,
+    ops::{Range, RangeInclusive},
     time::{Duration, Instant},
 };
 
@@ -13,7 +13,8 @@ use bevy_asset_loader::prelude::*;
 use bevy_rapier2d::prelude::*;
 use bevy_tweening::Lerp;
 use iyes_progress::{ProgressCounter, ProgressPlugin};
-use rand::{distributions::Standard, prelude::Distribution, Rng};
+use rand::{distributions::uniform::SampleRange, prelude::*};
+use rand::{distributions::Standard, Rng};
 
 use crate::*;
 
@@ -58,8 +59,6 @@ const PLAYER_COLLISION_GROUP: Group = Group::GROUP_1;
 
 const BALL_SIZE: f32 = 18.0;
 const EXTRA_POINT_BALL_SIZE: f32 = 25.0;
-const BALL_MIN_START_X: f32 = -PLAY_AREA_RADIUS / 3.0;
-const BALL_MAX_START_X: f32 = PLAY_AREA_RADIUS / 3.0;
 const BALL_COLLISION_GROUP: Group = Group::GROUP_2;
 
 const FREEZE_DURATION: Duration = Duration::from_secs(3);
@@ -250,10 +249,8 @@ pub struct LevelSettings {
     time_between_spawns_in_group: Duration,
     /// Number of balls spawned per group
     balls_per_group: u32,
-    /// The range of possible initial impulses in the X direction on spawned balls
-    start_impulse_range_x: Range<f32>,
-    /// The range of possible initial impulses in the Y direction on spawned balls
-    start_impulse_range_y: Range<f32>,
+    /// Settings for where to spawn balls
+    spawn_points: Vec<SpawnPoint>,
     /// The time limit for the level
     duration: Duration,
     /// The minimum score required to complete the level
@@ -270,8 +267,7 @@ impl LevelSettings {
             time_between_groups: Duration::from_secs(10),
             time_between_spawns_in_group: Duration::from_millis(500),
             balls_per_group: 3,
-            start_impulse_range_x: -10.0..10.0,
-            start_impulse_range_y: -20.0..-5.0,
+            spawn_points: SpawnPoint::four_sides(5.0, 20.0),
             duration: Duration::from_secs(32),
             sides_to_unlock: vec![SideType::FreezeOthers],
             min_score: 1,
@@ -286,8 +282,7 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(8),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 3,
-                start_impulse_range_x: -10.0..10.0,
-                start_impulse_range_y: -21.0..-5.0,
+                spawn_points: SpawnPoint::four_sides(5.0, 21.0),
                 duration: Duration::from_secs(40),
                 sides_to_unlock: vec![SideType::BounceBackwards],
                 min_score: 1,
@@ -297,8 +292,7 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(8),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 4,
-                start_impulse_range_x: -10.0..10.0,
-                start_impulse_range_y: -23.0..-5.0,
+                spawn_points: SpawnPoint::four_sides(5.0, 23.0),
                 duration: Duration::from_secs(50),
                 sides_to_unlock: vec![SideType::ResizeScoreAreas],
                 min_score: 1,
@@ -308,8 +302,7 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(7),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 4,
-                start_impulse_range_x: -10.0..10.0,
-                start_impulse_range_y: -25.0..-6.0,
+                spawn_points: SpawnPoint::four_sides(6.0, 25.0),
                 duration: Duration::from_secs(64),
                 sides_to_unlock: vec![SideType::Destroy, SideType::ExtraPoints],
                 min_score: 3,
@@ -319,8 +312,7 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(7),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 5,
-                start_impulse_range_x: -10.0..10.0,
-                start_impulse_range_y: -27.0..-7.0,
+                spawn_points: SpawnPoint::four_sides(7.0, 27.0),
                 duration: Duration::from_secs(64),
                 sides_to_unlock: vec![SideType::Duplicate, SideType::ExtremeBounce],
                 min_score: 5,
@@ -330,8 +322,7 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(7),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 6,
-                start_impulse_range_x: -10.0..10.0,
-                start_impulse_range_y: -29.0..-8.0,
+                spawn_points: SpawnPoint::four_sides(8.0, 29.0),
                 duration: Duration::from_secs(64),
                 sides_to_unlock: vec![],
                 min_score: 7,
@@ -341,8 +332,7 @@ impl LevelSettings {
                 time_between_groups: Duration::from_secs(7),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 6,
-                start_impulse_range_x: -10.0..10.0,
-                start_impulse_range_y: -30.0..-9.0,
+                spawn_points: SpawnPoint::four_sides(9.0, 30.0),
                 duration: Duration::from_secs(64),
                 sides_to_unlock: vec![],
                 min_score: 10,
@@ -352,14 +342,94 @@ impl LevelSettings {
                 time_between_groups: self.time_between_groups,
                 time_between_spawns_in_group: self.time_between_spawns_in_group,
                 balls_per_group: self.balls_per_group + 1,
-                start_impulse_range_x: self.start_impulse_range_x.clone(),
-                start_impulse_range_y: (self.start_impulse_range_y.start - 1.0)
-                    ..self.start_impulse_range_y.end,
+                spawn_points: SpawnPoint::four_sides(
+                    self.spawn_points[0].min_impulse,
+                    self.spawn_points[0].max_impulse + 1.0,
+                ),
                 duration: self.duration,
                 min_score: self.min_score + 3,
                 sides_to_unlock: vec![],
             },
         }
+    }
+}
+
+struct SpawnPoint {
+    /// Range of possible X coordinates
+    start_position_range_x: RangeInclusive<f32>,
+    /// Range of possible Y coordinates
+    start_position_range_y: RangeInclusive<f32>,
+    /// The range of possible initial impulses in the X direction on spawned balls
+    start_impulse_range_x: RangeInclusive<f32>,
+    /// The range of possible initial impulses in the Y direction on spawned balls
+    start_impulse_range_y: RangeInclusive<f32>,
+    /// The minimum impulse spawned balls will get towards the center
+    min_impulse: f32,
+    /// The maximum impulse spawned balls will get towards the center
+    max_impulse: f32,
+}
+
+impl SpawnPoint {
+    /// Builds a spawn point next to the top wall
+    fn top(min_impulse: f32, max_impulse: f32) -> SpawnPoint {
+        SpawnPoint {
+            start_position_range_x: (-PLAY_AREA_RADIUS / 3.0)..=(PLAY_AREA_RADIUS / 3.0),
+            start_position_range_y: (PLAY_AREA_RADIUS - BALL_SIZE - 1.0)
+                ..=(PLAY_AREA_RADIUS - BALL_SIZE - 1.0),
+            start_impulse_range_x: -10.0..=10.0,
+            start_impulse_range_y: -max_impulse..=-min_impulse,
+            min_impulse,
+            max_impulse,
+        }
+    }
+
+    /// Builds a spawn point next to the top wall
+    fn bottom(min_impulse: f32, max_impulse: f32) -> SpawnPoint {
+        SpawnPoint {
+            start_position_range_x: (-PLAY_AREA_RADIUS / 3.0)..=(PLAY_AREA_RADIUS / 3.0),
+            start_position_range_y: (-PLAY_AREA_RADIUS + BALL_SIZE + 1.0)
+                ..=(-PLAY_AREA_RADIUS + BALL_SIZE + 1.0),
+            start_impulse_range_x: -10.0..=10.0,
+            start_impulse_range_y: min_impulse..=max_impulse,
+            min_impulse,
+            max_impulse,
+        }
+    }
+
+    /// Builds a spawn point next to the left wall
+    fn left(min_impulse: f32, max_impulse: f32) -> SpawnPoint {
+        SpawnPoint {
+            start_position_range_x: (-PLAY_AREA_RADIUS + BALL_SIZE + 1.0)
+                ..=(-PLAY_AREA_RADIUS + BALL_SIZE + 1.0),
+            start_position_range_y: (-PLAY_AREA_RADIUS / 3.0)..=(PLAY_AREA_RADIUS / 3.0),
+            start_impulse_range_x: min_impulse..=max_impulse,
+            start_impulse_range_y: -10.0..=10.0,
+            min_impulse,
+            max_impulse,
+        }
+    }
+
+    /// Builds a spawn point next to the right wall
+    fn right(min_impulse: f32, max_impulse: f32) -> SpawnPoint {
+        SpawnPoint {
+            start_position_range_x: (PLAY_AREA_RADIUS - BALL_SIZE - 1.0)
+                ..=(PLAY_AREA_RADIUS - BALL_SIZE - 1.0),
+            start_position_range_y: (-PLAY_AREA_RADIUS / 3.0)..=(PLAY_AREA_RADIUS / 3.0),
+            start_impulse_range_x: -max_impulse..=-min_impulse,
+            start_impulse_range_y: -10.0..=10.0,
+            min_impulse,
+            max_impulse,
+        }
+    }
+
+    /// Builds spawn points next to each wall
+    fn four_sides(min_impulse: f32, max_impulse: f32) -> Vec<SpawnPoint> {
+        vec![
+            SpawnPoint::top(min_impulse, max_impulse),
+            SpawnPoint::bottom(min_impulse, max_impulse),
+            SpawnPoint::left(min_impulse, max_impulse),
+            SpawnPoint::right(min_impulse, max_impulse),
+        ]
     }
 }
 
@@ -1215,14 +1285,18 @@ fn spawn_random_ball(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    level_settings: &Res<LevelSettings>,
+    level_settings: &LevelSettings,
 ) {
     let mut rng = rand::thread_rng();
     let ball_type = rng.gen::<BallType>();
-    // TODO add more spawn points
-    let spawn_point_x = rng.gen_range(BALL_MIN_START_X..=BALL_MAX_START_X);
-    let impulse_x = rng.gen_range(level_settings.start_impulse_range_x.clone());
-    let impulse_y = rng.gen_range(level_settings.start_impulse_range_y.clone());
+    let spawn_point = level_settings
+        .spawn_points
+        .choose(&mut rng)
+        .expect("at least one spawn point should be defined");
+    let spawn_point_x = rng.gen_range(spawn_point.start_position_range_x.clone());
+    let spawn_point_y = rng.gen_range(spawn_point.start_position_range_y.clone());
+    let impulse_x = rng.gen_range(spawn_point.start_impulse_range_x.clone());
+    let impulse_y = rng.gen_range(spawn_point.start_impulse_range_y.clone());
     spawn_ball(
         &mut commands,
         Ball {
@@ -1234,7 +1308,7 @@ fn spawn_random_ball(
     )
     .insert(TransformBundle::from(Transform::from_xyz(
         spawn_point_x,
-        PLAY_AREA_RADIUS - BALL_SIZE - 1.0,
+        spawn_point_y,
         0.0,
     )))
     .insert(ExternalImpulse {
@@ -1529,6 +1603,8 @@ fn handle_duplicate_effect(
         (
             Entity,
             &Ball,
+            &Collider,
+            &Mesh2dHandle,
             &Transform,
             &Velocity,
             Option<&DuplicateCooldown>,
@@ -1540,7 +1616,7 @@ fn handle_duplicate_effect(
     audio: Res<Audio>,
     audio_assets: Res<AudioAssets>,
 ) {
-    for (entity, ball, transform, velocity, duplicate_cooldown) in query.iter() {
+    for (entity, ball, collider, mesh, transform, velocity, duplicate_cooldown) in query.iter() {
         if duplicate_cooldown.is_some() {
             commands.entity(entity).remove::<DuplicateEffect>();
             continue;
@@ -1548,6 +1624,8 @@ fn handle_duplicate_effect(
 
         let impulse = Vec2::new(5.0, 5.0); //TODO make this parallel to hit side
         spawn_ball(&mut commands, ball.clone(), &mut meshes, &mut materials)
+            .insert(collider.clone())
+            .insert(mesh.clone())
             .insert(TransformBundle::from(*transform))
             .insert(*velocity)
             .insert(ExternalImpulse {

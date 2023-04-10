@@ -245,6 +245,8 @@ pub struct LevelSettings {
     pub id: usize,
     /// Amount of time between spawning groups of balls
     time_between_groups: Duration,
+    /// Maximum amount of time before a new group gets spawned if there are no balls left on screen
+    max_respite_time: Duration,
     /// Amount of time between spawning balls in the same group
     time_between_spawns_in_group: Duration,
     /// Number of balls spawned per group
@@ -265,6 +267,7 @@ impl LevelSettings {
         LevelSettings {
             id: 1,
             time_between_groups: Duration::from_secs(10),
+            max_respite_time: Duration::from_secs(2),
             time_between_spawns_in_group: Duration::from_millis(500),
             balls_per_group: 3,
             spawn_points: SpawnPoint::four_sides(5.0, 20.0),
@@ -280,6 +283,7 @@ impl LevelSettings {
             1 => LevelSettings {
                 id: 2,
                 time_between_groups: Duration::from_secs(8),
+                max_respite_time: Duration::from_secs(2),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 3,
                 spawn_points: SpawnPoint::four_sides(5.0, 21.0),
@@ -290,6 +294,7 @@ impl LevelSettings {
             2 => LevelSettings {
                 id: 3,
                 time_between_groups: Duration::from_secs(8),
+                max_respite_time: Duration::from_secs(2),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 4,
                 spawn_points: SpawnPoint::four_sides(5.0, 23.0),
@@ -300,6 +305,7 @@ impl LevelSettings {
             3 => LevelSettings {
                 id: 4,
                 time_between_groups: Duration::from_secs(7),
+                max_respite_time: Duration::from_secs(2),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 4,
                 spawn_points: SpawnPoint::four_sides(6.0, 25.0),
@@ -310,6 +316,7 @@ impl LevelSettings {
             4 => LevelSettings {
                 id: 5,
                 time_between_groups: Duration::from_secs(7),
+                max_respite_time: Duration::from_secs(2),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 5,
                 spawn_points: SpawnPoint::four_sides(7.0, 27.0),
@@ -320,6 +327,7 @@ impl LevelSettings {
             5 => LevelSettings {
                 id: 6,
                 time_between_groups: Duration::from_secs(7),
+                max_respite_time: Duration::from_secs(1),
                 time_between_spawns_in_group: Duration::from_millis(500),
                 balls_per_group: 6,
                 spawn_points: SpawnPoint::four_sides(8.0, 29.0),
@@ -330,8 +338,9 @@ impl LevelSettings {
             6 => LevelSettings {
                 id: 7,
                 time_between_groups: Duration::from_secs(7),
+                max_respite_time: Duration::from_secs(1),
                 time_between_spawns_in_group: Duration::from_millis(500),
-                balls_per_group: 6,
+                balls_per_group: 7,
                 spawn_points: SpawnPoint::four_sides(9.0, 30.0),
                 duration: Duration::from_secs(64),
                 sides_to_unlock: vec![],
@@ -340,15 +349,16 @@ impl LevelSettings {
             _ => LevelSettings {
                 id: self.id + 1,
                 time_between_groups: self.time_between_groups,
+                max_respite_time: self.max_respite_time,
                 time_between_spawns_in_group: self.time_between_spawns_in_group,
                 balls_per_group: self.balls_per_group + 1,
                 spawn_points: SpawnPoint::four_sides(
                     self.spawn_points[0].min_impulse,
-                    self.spawn_points[0].max_impulse + 1.0,
+                    self.spawn_points[0].max_impulse + 0.5,
                 ),
                 duration: self.duration,
-                min_score: self.min_score + 3,
                 sides_to_unlock: vec![],
+                min_score: self.min_score + 3,
             },
         }
     }
@@ -1256,12 +1266,18 @@ fn spawn_balls(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     level_settings: Res<LevelSettings>,
+    balls_query: Query<&Ball>,
     mut next_spawn_time: Local<SpawnTime>,
     mut balls_spawned_in_group: Local<u32>,
     audio_assets: Res<AudioAssets>,
     audio: Res<Audio>,
 ) {
-    if Instant::now().duration_since(next_spawn_time.0) > Duration::ZERO {
+    if balls_query.is_empty()
+        && next_spawn_time.0.duration_since(Instant::now()) > level_settings.max_respite_time
+    {
+        // there are no balls left on screen, so reduce time until next group is spawned
+        next_spawn_time.0 = Instant::now() + level_settings.max_respite_time;
+    } else if Instant::now().duration_since(next_spawn_time.0) > Duration::ZERO {
         spawn_random_ball(commands, meshes, materials, &level_settings);
 
         audio.play_with_settings(

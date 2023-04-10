@@ -135,17 +135,14 @@ fn between_levels_setup(
                     })
                     .insert(BetweenLevelsComponent)
                     .with_children(|parent| {
-                        for unlocked_side in &level_settings.sides_to_unlock {
+                        if level_settings.sides_to_unlock.is_empty() {
                             parent.spawn(
                                 TextBundle::from_section(
-                                    format!(
-                                        "new side unlocked: {}",
-                                        unlocked_side.name().to_ascii_lowercase()
-                                    ),
+                                    "all sides have been unlocked",
                                     TextStyle {
                                         font: asset_server.load(MONO_FONT),
-                                        font_size: 35.0,
-                                        color: Color::WHITE,
+                                        font_size: 25.0,
+                                        color: Color::rgb(0.8, 0.8, 0.8),
                                     },
                                 )
                                 .with_text_alignment(TextAlignment::Center)
@@ -154,6 +151,27 @@ fn between_levels_setup(
                                     ..default()
                                 }),
                             );
+                        } else {
+                            for unlocked_side in &level_settings.sides_to_unlock {
+                                parent.spawn(
+                                    TextBundle::from_section(
+                                        format!(
+                                            "new side unlocked: {}",
+                                            unlocked_side.name().to_ascii_lowercase()
+                                        ),
+                                        TextStyle {
+                                            font: asset_server.load(MONO_FONT),
+                                            font_size: 35.0,
+                                            color: Color::WHITE,
+                                        },
+                                    )
+                                    .with_text_alignment(TextAlignment::Center)
+                                    .with_style(Style {
+                                        margin: UiRect::all(Val::Auto),
+                                        ..default()
+                                    }),
+                                );
+                            }
                         }
                     });
             }

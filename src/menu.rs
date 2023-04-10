@@ -40,10 +40,10 @@ fn menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         .with_children(|parent| {
             parent.spawn(
                 TextBundle::from_section(
-                    "Side Effects",
+                    "Extreme Bounce Party 2000",
                     TextStyle {
-                        font: asset_server.load(MAIN_FONT),
-                        font_size: 50.0,
+                        font: asset_server.load(TITLE_FONT),
+                        font_size: 75.0,
                         color: Color::WHITE,
                     },
                 )
@@ -77,11 +77,10 @@ fn menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             parent
                 .spawn(ButtonBundle {
                     style: Style {
-                        size: Size::new(Val::Px(150.0), Val::Px(65.0)),
-                        // horizontally center child text
+                        size: Size::new(Val::Auto, Val::Auto),
                         justify_content: JustifyContent::Center,
-                        // vertically center child text
                         align_items: AlignItems::Center,
+                        padding: UiRect::all(Val::Px(10.0)),
                         ..default()
                     },
                     background_color: NORMAL_BUTTON.into(),
@@ -90,9 +89,9 @@ fn menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 .insert(StartButton)
                 .with_children(|parent| {
                     parent.spawn(TextBundle::from_section(
-                        "Start",
+                        "start",
                         TextStyle {
-                            font: asset_server.load(MAIN_FONT),
+                            font: asset_server.load(MONO_FONT),
                             font_size: 40.0,
                             color: NORMAL_BUTTON_TEXT_COLOR,
                         },

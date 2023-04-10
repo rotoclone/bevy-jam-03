@@ -19,7 +19,9 @@ use between_levels::*;
 
 const DEV_MODE: bool = false;
 
-const MAIN_FONT: &str = "fonts/Quicksand-Medium.ttf";
+const TITLE_FONT: &str = "fonts/TurretRoad-Bold.ttf";
+const MAIN_FONT: &str = "fonts/SofiaSans-Light.ttf";
+const MONO_FONT: &str = "fonts/MajorMonoDisplay-Regular.ttf";
 
 const WINDOW_WIDTH: f32 = 1280.0;
 const WINDOW_HEIGHT: f32 = 720.0;
@@ -53,7 +55,7 @@ fn main() {
         .insert_resource(Msaa::Sample4)
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Side Effects".into(),
+                title: "Extreme Bounce Party 2000".into(),
                 resolution: WindowResolution::new(WINDOW_WIDTH, WINDOW_HEIGHT),
                 // Tells wasm to resize the window according to the available canvas
                 fit_canvas_to_parent: true,
@@ -90,8 +92,6 @@ fn main() {
 }
 
 fn setup(mut commands: Commands) {
-    //TODO commands.spawn(Camera2dBundle::default());
-
     commands
         .spawn((
             Camera2dBundle {

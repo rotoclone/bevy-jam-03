@@ -103,16 +103,19 @@ fn between_levels_setup(
         .with_children(|parent| {
             parent.spawn(
                 TextBundle::from_section(
-                    format!("You got {} points on level {}", score.0, level_settings.id),
+                    format!("you got {} points on level {}", score.0, level_settings.id),
                     TextStyle {
-                        font: asset_server.load(MAIN_FONT),
+                        font: asset_server.load(MONO_FONT),
                         font_size: 45.0,
                         color: Color::WHITE,
                     },
                 )
                 .with_text_alignment(TextAlignment::Center)
                 .with_style(Style {
-                    margin: UiRect::all(Val::Auto),
+                    margin: UiRect {
+                        bottom: Val::Px(10.0),
+                        ..default()
+                    },
                     ..default()
                 }),
             );
@@ -135,9 +138,12 @@ fn between_levels_setup(
                         for unlocked_side in &level_settings.sides_to_unlock {
                             parent.spawn(
                                 TextBundle::from_section(
-                                    format!("You unlocked a new side: {}", unlocked_side.name()),
+                                    format!(
+                                        "new side unlocked: {}",
+                                        unlocked_side.name().to_ascii_lowercase()
+                                    ),
                                     TextStyle {
-                                        font: asset_server.load(MAIN_FONT),
+                                        font: asset_server.load(MONO_FONT),
                                         font_size: 35.0,
                                         color: Color::WHITE,
                                     },
@@ -216,12 +222,8 @@ fn between_levels_setup(
                 parent
                     .spawn(ButtonBundle {
                         style: Style {
-                            size: Size::new(Val::Auto, Val::Px(65.0)),
-                            padding: UiRect {
-                                left: Val::Px(10.0),
-                                right: Val::Px(10.0),
-                                ..default()
-                            },
+                            size: Size::new(Val::Auto, Val::Auto),
+                            padding: UiRect::all(Val::Px(10.0)),
                             justify_content: JustifyContent::Center,
                             align_items: AlignItems::Center,
                             ..default()
@@ -232,9 +234,9 @@ fn between_levels_setup(
                     .insert(NextLevelButton)
                     .with_children(|parent| {
                         parent.spawn(TextBundle::from_section(
-                            "Start Next Level",
+                            "start next level",
                             TextStyle {
-                                font: asset_server.load(MAIN_FONT),
+                                font: asset_server.load(MONO_FONT),
                                 font_size: 40.0,
                                 color: NORMAL_BUTTON_TEXT_COLOR,
                             },
@@ -264,12 +266,12 @@ fn between_levels_setup(
                 parent.spawn(
                     TextBundle::from_section(
                         format!(
-                            "You need a score of {} to move on to the next level",
+                            "you need a score of {} to move on to the next level",
                             level_settings.min_score,
                         ),
                         TextStyle {
-                            font: asset_server.load(MAIN_FONT),
-                            font_size: 35.0,
+                            font: asset_server.load(MONO_FONT),
+                            font_size: 30.0,
                             color: Color::WHITE,
                         },
                     )
@@ -283,16 +285,12 @@ fn between_levels_setup(
                 parent
                     .spawn(ButtonBundle {
                         style: Style {
-                            size: Size::new(Val::Auto, Val::Px(65.0)),
+                            size: Size::new(Val::Auto, Val::Auto),
                             margin: UiRect {
                                 top: Val::Px(10.0),
                                 ..default()
                             },
-                            padding: UiRect {
-                                left: Val::Px(10.0),
-                                right: Val::Px(10.0),
-                                ..default()
-                            },
+                            padding: UiRect::all(Val::Px(10.0)),
                             justify_content: JustifyContent::Center,
                             align_items: AlignItems::Center,
                             ..default()
@@ -303,9 +301,9 @@ fn between_levels_setup(
                     .insert(RestartLevelButton)
                     .with_children(|parent| {
                         parent.spawn(TextBundle::from_section(
-                            "Restart Level",
+                            "restart level",
                             TextStyle {
-                                font: asset_server.load(MAIN_FONT),
+                                font: asset_server.load(MONO_FONT),
                                 font_size: 40.0,
                                 color: NORMAL_BUTTON_TEXT_COLOR,
                             },

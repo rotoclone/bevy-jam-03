@@ -600,9 +600,9 @@ fn loading_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn(
             TextBundle::from_section(
-                "Loading...\n0%",
+                "loading...\n0%",
                 TextStyle {
-                    font: asset_server.load(MAIN_FONT),
+                    font: asset_server.load(MONO_FONT),
                     font_size: 50.0,
                     color: Color::WHITE,
                 },
@@ -627,7 +627,7 @@ fn display_loading_progress(
             *last_done = progress.done;
             let percent_done = (progress.done as f32 / progress.total as f32) * 100.0;
             for mut loading_text in loading_text_query.iter_mut() {
-                loading_text.sections[0].value = format!("Loading...\n{percent_done:.0}%");
+                loading_text.sections[0].value = format!("loading...\n{percent_done:.0}%");
             }
         }
     }
@@ -714,30 +714,6 @@ fn game_setup(
         )))
         .insert(GameComponent)
         .insert(ScoreArea(BallType::C));
-
-    /* TODO
-    // player boundary
-    commands
-        .spawn(SpriteBundle {
-            transform: Transform::from_translation(Vec3::new(0.0, PLAY_AREA_RADIUS / 3.0, 0.0)),
-            sprite: Sprite {
-                color: Color::Rgba {
-                    red: 0.2,
-                    green: 0.2,
-                    blue: 0.2,
-                    alpha: 0.2,
-                },
-                custom_size: Some(Vec2::new(PLAY_AREA_RADIUS * 2.0, 4.0)),
-                ..default()
-            },
-            ..default()
-        })
-        .insert(Collider::cuboid(PLAY_AREA_RADIUS, 2.0))
-        // only collide with player
-        .insert(CollisionGroups::new(Group::GROUP_3, PLAYER_COLLISION_GROUP))
-        .insert(Restitution::coefficient(1.0))
-        .insert(GameComponent);
-    */
 
     // left wall
     commands
@@ -828,10 +804,10 @@ fn game_setup(
             parent
                 .spawn(
                     TextBundle::from_section(
-                        format!("Level {}", level_settings.id),
+                        format!("level {}", level_settings.id),
                         TextStyle {
-                            font: asset_server.load(MAIN_FONT),
-                            font_size: 30.0,
+                            font: asset_server.load(MONO_FONT),
+                            font_size: 28.0,
                             color: Color::Rgba {
                                 red: 0.75,
                                 green: 0.75,
@@ -840,17 +816,24 @@ fn game_setup(
                             },
                         },
                     )
-                    .with_text_alignment(TextAlignment::Center),
+                    .with_text_alignment(TextAlignment::Center)
+                    .with_style(Style {
+                        margin: UiRect {
+                            bottom: Val::Px(5.0),
+                            ..default()
+                        },
+                        ..default()
+                    }),
                 )
                 .insert(LevelText);
 
             // minimum score display
             parent.spawn(
                 TextBundle::from_section(
-                    format!("Score needed: {}", level_settings.min_score),
+                    format!("score needed: {}", level_settings.min_score),
                     TextStyle {
-                        font: asset_server.load(MAIN_FONT),
-                        font_size: 25.0,
+                        font: asset_server.load(MONO_FONT),
+                        font_size: 22.0,
                         color: Color::Rgba {
                             red: 0.75,
                             green: 0.75,
@@ -859,21 +842,35 @@ fn game_setup(
                         },
                     },
                 )
-                .with_text_alignment(TextAlignment::Center),
+                .with_text_alignment(TextAlignment::Center)
+                .with_style(Style {
+                    margin: UiRect {
+                        bottom: Val::Px(5.0),
+                        ..default()
+                    },
+                    ..default()
+                }),
             );
 
             // score display
             parent
                 .spawn(
                     TextBundle::from_section(
-                        "Score: 0",
+                        "score: 0",
                         TextStyle {
-                            font: asset_server.load(MAIN_FONT),
-                            font_size: 35.0,
+                            font: asset_server.load(MONO_FONT),
+                            font_size: 33.0,
                             color: Color::WHITE,
                         },
                     )
-                    .with_text_alignment(TextAlignment::Center),
+                    .with_text_alignment(TextAlignment::Center)
+                    .with_style(Style {
+                        margin: UiRect {
+                            bottom: Val::Px(5.0),
+                            ..default()
+                        },
+                        ..default()
+                    }),
                 )
                 .insert(ScoreText);
         });
@@ -884,7 +881,7 @@ fn game_setup(
             TextBundle::from_section(
                 "",
                 TextStyle {
-                    font: asset_server.load(MAIN_FONT),
+                    font: asset_server.load(MONO_FONT),
                     font_size: TIMER_FONT_SIZE,
                     color: Color::WHITE,
                 },
@@ -911,11 +908,11 @@ fn game_setup(
     commands
         .spawn(
             TextBundle::from_section(
-                format!("Rotation sensitivity: {:.1}", rotate_sensitivity.0),
+                format!("rotation sensitivity: {:.1}", rotate_sensitivity.0),
                 TextStyle {
-                    font: asset_server.load(MAIN_FONT),
-                    font_size: 20.0,
-                    color: Color::GRAY,
+                    font: asset_server.load(MONO_FONT),
+                    font_size: 14.0,
+                    color: Color::rgb(0.9, 0.9, 0.9),
                 },
             )
             .with_text_alignment(TextAlignment::Center)
@@ -1742,7 +1739,7 @@ fn update_score_display(
     mut score_text_query: Query<&mut Text, With<ScoreText>>,
 ) {
     for mut text in score_text_query.iter_mut() {
-        text.sections[0].value = format!("Score: {}", score.0);
+        text.sections[0].value = format!("score: {}", score.0);
     }
 }
 
@@ -1789,7 +1786,7 @@ fn update_rotate_sensitivity_display(
 ) {
     if rotate_sensitivity.is_changed() {
         for mut text in rotate_sensitivity_text_query.iter_mut() {
-            text.sections[0].value = format!("Rotation sensitivity: {:.1}", rotate_sensitivity.0);
+            text.sections[0].value = format!("rotation sensitivity: {:.1}", rotate_sensitivity.0);
         }
     }
 }

@@ -1954,22 +1954,22 @@ fn update_time_display(
         }
 
         if seconds_left == 0 {
-            text.sections[0].style.font_size = TIMER_FONT_SIZE + 21.0;
+            text.sections[0].style.font_size = TIMER_FONT_SIZE + 27.0;
             text.sections[0].style.color = Color::rgb(1.0, 0.0, 0.0);
         } else if seconds_left <= 1 {
-            text.sections[0].style.font_size = TIMER_FONT_SIZE + 15.0;
+            text.sections[0].style.font_size = TIMER_FONT_SIZE + 20.0;
             text.sections[0].style.color = Color::rgb(1.0, 0.1, 0.1);
         } else if seconds_left <= 2 {
-            text.sections[0].style.font_size = TIMER_FONT_SIZE + 10.0;
+            text.sections[0].style.font_size = TIMER_FONT_SIZE + 14.0;
             text.sections[0].style.color = Color::rgb(1.0, 0.3, 0.3);
         } else if seconds_left <= 3 {
-            text.sections[0].style.font_size = TIMER_FONT_SIZE + 6.0;
+            text.sections[0].style.font_size = TIMER_FONT_SIZE + 9.0;
             text.sections[0].style.color = Color::rgb(1.0, 0.5, 0.5);
         } else if seconds_left <= 4 {
-            text.sections[0].style.font_size = TIMER_FONT_SIZE + 3.0;
+            text.sections[0].style.font_size = TIMER_FONT_SIZE + 5.0;
             text.sections[0].style.color = Color::rgb(1.0, 0.7, 0.7);
         } else if seconds_left <= 5 {
-            text.sections[0].style.font_size = TIMER_FONT_SIZE + 1.0;
+            text.sections[0].style.font_size = TIMER_FONT_SIZE + 2.0;
             text.sections[0].style.color = Color::rgb(1.0, 0.9, 0.9);
         }
     }

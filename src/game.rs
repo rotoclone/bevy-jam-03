@@ -101,7 +101,7 @@ impl Plugin for GamePlugin {
         .insert_resource(ConfiguredSides(
             [
                 (SideId(0), SideType::SpeedUp),
-                (SideId(1), SideType::NothingSpecial),
+                (SideId(1), SideType::ExtremeBounce), //TODO
                 (SideId(2), SideType::NothingSpecial),
                 (SideId(3), SideType::NothingSpecial),
             ]
@@ -219,7 +219,7 @@ pub struct AudioAssets {
     hit: Handle<AudioSource>,
     #[asset(path = "sounds/up.ogg")]
     up: Handle<AudioSource>,
-    #[asset(path = "sounds/up_more.ogg")]
+    #[asset(path = "sounds/up_more_2.ogg")]
     up_more: Handle<AudioSource>,
     #[asset(path = "sounds/down.ogg")]
     down: Handle<AudioSource>,

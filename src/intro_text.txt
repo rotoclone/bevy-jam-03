@@ -6,3 +6,4 @@ If you get overwhelmed, just remember your training:
 WASD to move
 scroll wheel or left and right arrow keys to rotate
 , and . to adjust rotation sensitivity
+m to toggle colorblind mode
